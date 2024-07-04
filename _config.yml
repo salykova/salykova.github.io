@@ -25,6 +25,7 @@ domain: salykova.github.io
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://salykova.github.io" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: salykova_
+linkedin_username: salykovaa
 github_username:  salykova
 
 # Build settings
