@@ -157,29 +157,29 @@ The function that calculates these tiny $m_R \times n_R$ sub-matrices $\bar{C}$ 
 Let's take a closer look at the kernel.
 ![](/assets/matmul_cpu/kernel.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-To calculate a $m_R \times n_R$ sub-matrix $\bar{C}$ of matrix $C$, we multiply matrix $\bar{A}$ of size $m_R \times K$ and matrix $\bar{B}$ of size $K \times n_R$. If we do this in a naive manner using dot products, we would need to fetch $2K$ (=dot product) elements from RAM to calculate a single element of $\bar{C}$ or $2K m_R n_R$ elements in total to calculate $\bar{C}$. However, there is an alternative strategy that can reduce the number of fetched elements.
+To calculate a $m_R \times n_R$ sub-matrix $\bar{C}$ of matrix $C$, we multiply matrix $\bar{A}$ of size $m_R \times K$ with a matrix $\bar{B}$ of size $K \times n_R$. If we would do this in naive manner using dot products, we would need to fetch $2K$ (=dot product) elements from RAM to calculate single element of $\bar{C}$ or $2K m_R n_R$ elements in total to calculate $\bar{C}$. There is, however, an alternative strategy that can reduce the number of fetched elements.
 
 We first load matrix $\bar{C}$ into SIMD (=YMM) registers (note that we can do this because both $n_R$ and $m_R$ are small). The subscript $R$ in $n_R$ and $m_R$ stands for "registers". Then we iterate over $K$ and in each iteration we load 1 column of $\bar{A}$ and 1 row of $\bar{B}$ into YMM registers (again, note that both the row and the column vectors are small and fit in the registers). Finally, we perform matrix multiplication between the column and the row vectors to update the matrix $\bar{C}$. After $K$ iterations (=rank-1 updates), the matrix $\bar{C}$ is fully computed.
 ![](/assets/matmul_cpu/kernel_rank.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-> Example of matrix multiplication between a column and a row vector. Each column of the resulting matrix is computed by multiplying vector $\mathbf{u}$ with a scalar element of the row vector.
+> Example of matrix multiplication between a column and a row vector. Each column of the resulting matrix is computed by multiplying vector $\mathbf{u}$ with scalar element of the row vector.
 ![](/assets/matmul_cpu/outer_product.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-Overall we fetched $(m_R + n_R)K + m_R n_R \approx (m_R + n_R)K$  elements into the registers. Compared to the naive strategy, we reduced the number by a factor of
+Overall we fetched $(m_R + n_R)K + m_R n_R \approx (m_R + n_R)K$ elements into the registers (since $K \gg m_R, n_R$). Compared to the naive strategy, we reduced the number by a factor of
 
 $$\frac{2m_Rn_RK}{(m_R + n_R)K} = \frac{2m_Rn_R}{m_R + n_R}$$
 
 The factor is maximized when both $m_R$, $n_R$ are large and $m_R = n_R$. The values $m_R$ and $n_R$ are usually limited by the available memory in the registers.
 
-Now, let's explore how a rank-1 update can be implemented using SIMD instructions. Each rank-1 update is a matrix multiplication between a column of $\bar{A}$ and a row of $\bar{B}$. Note how single column of $\bar{C}$ is updated via scalar-vector multiplication between a column of $\bar{A}$ and corresponding scalar element of a row of $\bar{B}$. Thanks to the FMA extension, the update + scalar-vector multiplication can be efficiently calculated via the fused multiply-add instruction. Before executing the FMA instruction, we only need to broadcast the scalar element of the row of $\bar{B}$ to a vector and load it into a YMM register. The parameter $m_R$ determines how many elements are stored in column vectors of $\bar{C}, \bar{A}$ and how many YMM registers we need for this. Since each YMM register can store up to 8 floats, we assume that $m_R$ is a multiple of 8 (8, 16, 24, 32...) and the elements in column vectors are packed into blocks of size 8. Then the number of YMM registers required to store the column vectors can be calculated as $m_R$ / 8. Note that we don't need additional YMM registers for the broadcasted column vector of $\bar{B}$ since the same 8-float vector (YMM Register) can be reused to update all 8-float blocks of the column vector of $\bar{C}$.
+Now, let's explore how rank-1 update can be implemented using SIMD instructions. Each rank-1 update is a matrix multiplication between a column of $\bar{A}$ and a row of $\bar{B}$. Note how single column of $\bar{C}$ is updated via scalar-vector multiplication between the column of $\bar{A}$ and corresponding scalar element of the row of $\bar{B}$. Thanks to the FMA extension, the update + scalar-vector multiplication can be efficiently calculated via the fused multiply-add instruction. Before executing the FMA instruction, we only need to broadcast scalar element of the row of $\bar{B}$ to a vector and load the vector into YMM register. The parameter $m_R$ determines how many elements are stored in column vectors of $\bar{C}, \bar{A}$ and how many YMM registers we need for this. Since each YMM register can store up to 8 floats, we assume that $m_R$ is a multiple of 8 (8, 16, 24, 32...) and the elements in column vectors are packed into blocks of size 8. Then the number of YMM registers required to store the column vectors can be calculated as $m_R$ / 8. Note that we don't need additional YMM registers for broadcasted column vector of $\bar{B}$ since the same 8-float vector (YMM Register) can be reused to update all 8-float blocks of the column vector of $\bar{C}$.
 
 ![](/assets/matmul_cpu/kernel_registers.png){:width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Thus, the complete algorithm for a single rank-1 update of the matrix $\bar{C}$ is as follows:
+Thus, the complete algorithm for single rank-1 update of the matrix $\bar{C}$ is as follows:
 1. Load matrix $\bar{C}$ into YMM registers
-2. Load the column vector of matrix $\bar{A}$
+2. Load column vector of matrix $\bar{A}$
 3. Set n = 1
-4. Load the n-th scalar element of the row of $\bar{B}$, broadcast it to a vector and place it into YMM register.
+4. Load n-th scalar element of row vector of $\bar{B}$, broadcast it to a vector and place into YMM register.
 5. Update the n-th column of $\bar{C}$ via fused matrix multiply
 6. Increment n by 1.
 7. Repeat steps 4-6 until all columns of $\bar{C}$ are updated.
