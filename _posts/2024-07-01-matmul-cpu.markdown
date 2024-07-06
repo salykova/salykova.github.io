@@ -179,8 +179,8 @@ Thus, the complete algorithm for single rank-1 update of the matrix $\bar{C}$ is
 1. Load matrix $\bar{C}$ into YMM registers
 2. Load column vector of matrix $\bar{A}$
 3. Set n = 1
-4. Load n-th scalar element of row vector of $\bar{B}$, broadcast it to a vector and place into YMM register.
-5. Update the n-th column of $\bar{C}$ via fused matrix multiply
+4. Load n-th scalar element of row vector of $\bar{B}$, broadcast it to a vector and place into single YMM register.
+5. Update n-th column of $\bar{C}$ via fused matrix multiply
 6. Increment n by 1.
 7. Repeat steps 4-6 until all columns of $\bar{C}$ are updated.
 
@@ -220,7 +220,7 @@ SIMD C functions are well documented and can be found in the [Intel Intrinsics G
 
 ![](/assets/matmul_cpu/intel_intrin.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-In the next step, we iterate over `K` and, in each iteration, load a column vector of $\bar{A}$, broadcast a scalar value of $\bar{B}$ to a vector, and perform a fused multiply-add operation to update 1 column of `C_buffer`:
+In the next step, we iterate over `K` and, in each iteration, load column vector of $\bar{A}$, broadcast scalar value of $\bar{B}$ to a vector, and perform a fused multiply-add operation to update single column of `C_buffer`:
 ```c
 for (int p = 0; p < K; p++) {
   a0_packFloat8 = _mm256_loadu_ps(&A[p * M]);
@@ -343,7 +343,7 @@ void pack_blockA(float* A, float* blockA_packed, const int m, const int M,
   }
 }
 ```
-These blocks with static shapes are then passed into the kernel, so that the rank-1 update inside the kernel can remain unchanged and be optimized during compilation time.
+These blocks with static shapes are then passed into the kernel, so that the rank-1 update inside the kernel can remain unchanged and can be optimized during compilation time.
 ```c
 void matmul_pack_mask(float* A, float* B, float* C, float* blockA_packed,
                         float* blockB_packed, const int M, const int N,
