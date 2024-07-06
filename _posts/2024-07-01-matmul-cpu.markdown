@@ -448,7 +448,7 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 
  In contrast, the last two loops iterate over cache blocks, dividing them into $m_r, n_r$ blocks. Since $n_r, m_r$ are typically very small (<20), these loops are ideal candidates for parallelization. Moreover, we can choose $m_c, n_c$ to be multiples of $Nthreads$ so that the work is evenly distributed across all threads.
 
- On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration of the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
+ On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration for the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
 ```c
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int jr = 0; jr < nb; jr += NR)
