@@ -123,7 +123,7 @@ Theoretically, the CPU can execute 32 FLOP per cycle = 8 (floats in YMM register
 Without loss of generality in this implementation we will assume that matrices stored in column-major order. A matrix `A` of shape `MxN` is stored as contiguous array of length `M*N` and an element `A[row][col]` is accessed via C raw pointer `ptr[col*M + row]`, where `0 <= col <= N-1` and `0 <= row <= M-1`.
 ![](/assets/matmul_cpu/mem_layout.png){:width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
-The naive implementation
+The naive algorithm
 ![](/assets/matmul_cpu/matmul_naive.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
 can be implemented as follows:
@@ -164,13 +164,13 @@ We first load matrix $\bar{C}$ into SIMD (=YMM) registers (note that we can do t
 > Example of matrix multiplication between a column and a row vector. Each column of the resulting matrix is computed by multiplying vector $\mathbf{u}$ with a scalar element of the row vector.
 ![](/assets/matmul_cpu/outer_product.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-Overall we fetched $(m_R + n_R)K + m_R n_R \approx (m_R + n_R)K$  elements into registers. Compared to the naive strategy, we reduced the number by a factor of
+Overall we fetched $(m_R + n_R)K + m_R n_R \approx (m_R + n_R)K$  elements into the registers. Compared to the naive strategy, we reduced the number by a factor of
 
 $$\frac{2m_Rn_RK}{(m_R + n_R)K} = \frac{2m_Rn_R}{m_R + n_R}$$
 
 The factor is maximized when both $m_R$, $n_R$ are large and $m_R = n_R$. The values $m_R$ and $n_R$ are usually limited by the available memory in the registers.
 
-Now, let's explore how a rank-1 update can be implemented using SIMD instructions. Each rank-1 update is a matrix multiplication between a column of $\bar{A}$ and a row of $\bar{B}$. Note how individual column of $\bar{C}$ is updated via scalar-vector multiplication between a column of $\bar{A}$ and a corresponding scalar element of a row of $\bar{B}$. Thanks to the FMA extension, the update + scalar-vector multiplication can be efficiently calculated via a fused multiply-add instruction. Before executing the FMA instruction, we only need to broadcast the scalar element of the row of $\bar{B}$ to a vector and load it into a YMM register. The parameter $m_R$ determines how many elements are stored in column vectors of $\bar{C}, \bar{A}$ and how many YMM registers we need for this. Since each YMM register can store up to 8 floats, we assume that $m_R$ is a multiple of 8 (8, 16, 24, 32...) and the elements in column vectors are packed into blocks of size 8. Then the number of YMM registers required to store the column vectors can be calculated as $m_R$ / 8. Note that we don't need additional YMM registers for the broadcasted column vector of $\bar{B}$ since the same 8-float vector (YMM Register) can be reused to update all 8-float blocks of the column vector of $\bar{C}$.
+Now, let's explore how a rank-1 update can be implemented using SIMD instructions. Each rank-1 update is a matrix multiplication between a column of $\bar{A}$ and a row of $\bar{B}$. Note how single column of $\bar{C}$ is updated via scalar-vector multiplication between a column of $\bar{A}$ and corresponding scalar element of a row of $\bar{B}$. Thanks to the FMA extension, the update + scalar-vector multiplication can be efficiently calculated via the fused multiply-add instruction. Before executing the FMA instruction, we only need to broadcast the scalar element of the row of $\bar{B}$ to a vector and load it into a YMM register. The parameter $m_R$ determines how many elements are stored in column vectors of $\bar{C}, \bar{A}$ and how many YMM registers we need for this. Since each YMM register can store up to 8 floats, we assume that $m_R$ is a multiple of 8 (8, 16, 24, 32...) and the elements in column vectors are packed into blocks of size 8. Then the number of YMM registers required to store the column vectors can be calculated as $m_R$ / 8. Note that we don't need additional YMM registers for the broadcasted column vector of $\bar{B}$ since the same 8-float vector (YMM Register) can be reused to update all 8-float blocks of the column vector of $\bar{C}$.
 
 ![](/assets/matmul_cpu/kernel_registers.png){:width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
