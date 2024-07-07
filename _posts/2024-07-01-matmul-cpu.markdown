@@ -9,7 +9,7 @@ usemathjax: true
 **TL;DR**
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance matrix multiplication on CPU while keeping the code simple and scalable. The implementation follows the [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and, when fine-tuned for an AMD Ryzen 7700 (8 cores), outperforms NumPy (=[OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS)), achieving over 1 TFLOPS of peak performance across a wide range of matrix sizes.
 
-![](/assets/matmul_cpu/benchmark_mt.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
+![](/assets/matmul_cpu/matmul_perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
 By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets Intel Core and AMD Zen CPUs with FMA3 and AVX instructions (i.e., all modern Intel Core and AMD Zen CPUs), please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. Throughout this tutorial, we'll implement matrix multiplication from scratch, learning how to optimize and parallelize C code using matrix multiplication as an example. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
 
@@ -308,7 +308,7 @@ Handling the case where the number of overlapped rows $m$ differs from $m_R$ is 
 If $m \neq m_R$ , we create integer masks by left-shifting the unsigned integer `65535` (=`00000000 00000000 11111111 111111111` in binary format) depending on the number of overlapped rows $m$. The function `_mm256_setr_epi32` creates an 8-integer vector from 8 32-bit integers.
 ```c
 __m256i masks[2];
-if (m != MR) {
+if (m != 16) {
   const unsigned int bit_mask = 65535;
   masks[0] = _mm256_setr_epi32(bit_mask << (m + 15), bit_mask << (m + 14),
                  bit_mask << (m + 13), bit_mask << (m + 12),
@@ -360,7 +360,7 @@ void matmul_pack_mask(float* A, float* B, float* C, float* blockA_packed,
 }
 ```
 
-The new implementation `matmul_cache.c` achieves "only" 56 GFLOPS on my machine:
+The new implementation `matmul_pack_mask.c` achieves "only" 56 GFLOPS on my machine:
 ```bash
 clang-17 -O2 -mno-avx512f -march=native -DTEST -DNITER=100 matmul_pack_mask.c -o matmul_pack_mask.out && ./matmul_pack_mask.out
 ```
@@ -406,22 +406,20 @@ While these values provide a good starting point, using larger values often lead
 
 The implementation straightforwardly follows the algorithm depicted in the diagram:
 ```c
-void matmul_cache(float* A, float* B, float* C, const int M, const int N,
-                  const int K) {
-  for (int j = 0; j < N; j += NC) { // 5th loop
-    const int nb = min(NC, N - j);
-    for (int p = 0; p < K; p += KC) { // 4th loop
-      const int kb = min(KC, K - p);
-      pack_blockB(&B[j * K + p], blockB_packed, nb, kb, K);
-      for (int i = 0; i < M; i += MC) { // 3rd loop
-        const int mb = min(MC, M - i);
-        pack_blockA(&A[p * M + i], blockA_packed, mb, kb, M);
-        for (int jr = 0; jr < nb; jr += NR) { // 2nd loop
-          const int nr = min(NR, nb - jr);
-          for (int ir = 0; ir < mb; ir += MR) { // 1st loop
-            const int mr = min(MR, mb - ir);
-            kernel_16x6(&blockA_packed[ir * kb], &blockB_packed[jr * kb],
-                        &C[(j + jr) * M + (i + ir)], mr, nr, kb, M);
+void matmul_cache(float* A, float* B, float* C, const int M, const int N, const int K) {
+  for (int j = 0; j < N; j += NC) {
+    const int nc = min(NC, N - j);
+    for (int p = 0; p < K; p += KC) {
+      const int kc = min(KC, K - p);
+      pack_blockB(&B[j * K + p], blockB_packed, nc, kc, K);
+      for (int i = 0; i < M; i += MC) {
+        const int mc = min(MC, M - i);
+        pack_blockA(&A[p * M + i], blockA_packed, mc, kc, M);
+        for (int jr = 0; jr < nc; jr += NR) {
+          for (int ir = 0; ir < mc; ir += MR) {
+            const int mr = min(MR, mc - ir);
+            const int nr = min(NR, nc - jr);
+            kernel_16x6(&blockA_packed[ir * kc], &blockB_packed[jr * kc], &C[(j + jr) * M + (i + ir)], mr, nr, kc, M);
           }
         }
       }
@@ -451,29 +449,29 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
  On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration for the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
 ```c
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
-  for (int jr = 0; jr < nb; jr += NR)
+  for (int jr = 0; jr < nc; jr += NR)
 ```
 >It's also possible to parallelize the 2nd and 1st loops using `#pragma omp parallel for collapse(2)`, which leads to similar performance when parallelizing only the 2nd loop.
 
 Together with arithmetic operations, we also want to accelerate the packing of both $\tilde{A}$ and $\tilde{B}$:
 ```c
-void pack_blockA(float* A, float* blockA_packed, const int mb, const int kb, const int M)
+void pack_blockA(float* A, float* blockA_packed, const int mc, const int kc, const int M)
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
-  for (int i = 0; i < mb; i += MR)
+  for (int i = 0; i < mc; i += MR)
 ```
 
 ```c
-void pack_blockB(float* B, float* blockB_packed, const int nb, const int kb, const int K)
+void pack_blockB(float* B, float* blockB_packed, const int nc, const int kc, const int K)
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
-  for (int j = 0; j < nb; j += NR)
+  for (int j = 0; j < nc; j += NR)
 ```
-Similar to arithmetic operations, the packing loops can be easily parallelized due to the high number of iterations and the flexibility of choosing  $m_c, k_c, n_c$.
+Similar to the second loop (and first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$.
 
 Running
 ```bash
 clang-17 -O2 -mno-avx512f -march=native -DNITER=100 -fopenmp matmul_parallel.c -o matmul_parallel.out && ./matmul_parallel.out
 ```
-shows around 1 TFLOPS. Don't forget to add the `-fopenmp` compiler flag to use OpenMP directives. You might also need to install `libomp-dev` with `sudo apt install libomp-dev`.
+shows around 1 TFLOPS. Don't forget to add the `-fopenmp` compiler flag to use OpenMP directives. You might also need to install `libomp-dev` via `sudo apt install libomp-dev`.
 
 Let's check the CPU utilization
 ```
