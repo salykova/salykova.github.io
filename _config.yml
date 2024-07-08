@@ -32,12 +32,26 @@ github_username:  salykova
 theme: minima
 plugins:
   - jekyll-feed
+  - jekyll-seo-tag
 markdown: kramdown
 highlighter: rouge
 input: GFM
 permalink: /:title
 sass:
   quiet_deps: true
+
+# SEO
+author:
+  name: Aman Salykov
+  twitter: salykova_
+twitter:
+  username: salykova_
+social:
+  name: Aman Salykov
+  links:
+    - https://twitter.com/salykova_
+    - https://www.linkedin.com/in/salykovaa
+    - https://github.com/salykova
 
 # The following items will not be processed, by default.
 # Any item listed under the `exclude:` key here will be automatically added to

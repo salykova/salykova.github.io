@@ -1,16 +1,18 @@
 ---
 layout: post
 title:  "Beating NumPy's matrix multiplication in 150 lines of C code"
+excerpt: "In this tutorial we'll implement high-performance matrix multiplication in C from scratch and learn how to optimize and parallelize code on CPUs. The final multi-threading implementation outperforms OpenBLAS on a broad range of matrix sizes with peak performance of over 1 TFLOPS on Ryzen 7700."
 date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
-categories: CPU, optimization, algorithm, C, OpenMP, matmul
 usemathjax: true
 ---
 **TL;DR**
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance matrix multiplication on CPU while keeping the code simple and scalable. The implementation follows the [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and outperforms NumPy (=[OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS)) on AMD Ryzen 7700, achieving over 1 TFLOPS of peak performance across a wide range of matrix sizes.
 ![](/assets/matmul_cpu/matmul_perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
-By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. Throughout this tutorial, we'll implement matrix multiplication from scratch, learning how to optimize and parallelize C code on CPUs. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
+By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. In this tutorial, we'll implement matrix multiplication in C from scratch and learn how to optimize and parallelize code on CPUs. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
+
+**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out!**
 
 ## Intro
 
@@ -445,7 +447,7 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 
  In contrast, the last two loops iterate over cache blocks, dividing them into $m_r, n_r$ blocks. Since $n_r, m_r$ are typically very small (<20), these loops are ideal candidates for parallelization. Moreover, we can choose $m_c, n_c$ to be multiples of $Nthreads$ so that the work is evenly distributed across all threads.
 
- On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration for the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
+ On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration in the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
 ```c
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int jr = 0; jr < nc; jr += NR)
@@ -485,3 +487,5 @@ The CPU utilization:
 htop
 ```
 ![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
+
+**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out!**
