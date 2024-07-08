@@ -12,7 +12,7 @@ The code from the tutorial is available at [matmul.c](https://github.com/salykov
 
 By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. In this tutorial, we'll implement matrix multiplication in C from scratch and learn how to optimize and parallelize code on CPUs. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
 
-**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out!**
+**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
 
 ## Intro
 
@@ -488,4 +488,4 @@ htop
 ```
 ![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out!**
+**P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
