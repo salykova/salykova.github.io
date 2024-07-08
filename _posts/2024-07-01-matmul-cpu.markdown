@@ -7,11 +7,11 @@ categories: CPU, optimization, algorithm, C, OpenMP, matmul
 usemathjax: true
 ---
 **TL;DR**
-The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance matrix multiplication on CPU while keeping the code simple and scalable. The implementation follows the [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and, when fine-tuned for an AMD Ryzen 7700 (8 cores), outperforms NumPy (=[OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS)), achieving over 1 TFLOPS of peak performance across a wide range of matrix sizes.
+The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance matrix multiplication on CPU while keeping the code simple and scalable. The implementation follows the [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and outperforms NumPy (=[OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS)) on AMD Ryzen 7700, achieving over 1 TFLOPS of peak performance across a wide range of matrix sizes.
 
 ![](/assets/matmul_cpu/matmul_perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
-By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets Intel Core and AMD Zen CPUs with FMA3 and AVX instructions (i.e., all modern Intel Core and AMD Zen CPUs), please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. Throughout this tutorial, we'll implement matrix multiplication from scratch, learning how to optimize and parallelize C code using matrix multiplication as an example. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
+By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. Throughout this tutorial, we'll implement matrix multiplication from scratch, learning how to optimize and parallelize C code on CPUs. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
 
 ## Intro
 
@@ -451,7 +451,7 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int jr = 0; jr < nc; jr += NR)
 ```
->It's also possible to parallelize the 2nd and 1st loops using `#pragma omp parallel for collapse(2)`, which leads to similar performance when parallelizing only the 2nd loop.
+>It's also possible to parallelize both 2nd and 1st loops as nested loops using `#pragma omp parallel for collapse(2)`, which leads to similar performance when parallelizing only the 2nd loop.
 
 Together with arithmetic operations, we also want to accelerate the packing of both $\tilde{A}$ and $\tilde{B}$:
 ```c
@@ -465,24 +465,24 @@ void pack_blockB(float* B, float* blockB_packed, const int nc, const int kc, con
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int j = 0; j < nc; j += NR)
 ```
-Similar to the second loop (and first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$.
+Similar to the second loop (and the first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$.
 
 Running
 ```bash
 clang-17 -O2 -mno-avx512f -march=native -DNITER=100 -fopenmp matmul_parallel.c -o matmul_parallel.out && ./matmul_parallel.out
 ```
-shows around 1 TFLOPS. Don't forget to add the `-fopenmp` compiler flag to use OpenMP directives. You might also need to install `libomp-dev` via `sudo apt install libomp-dev`.
+shows around 1 TFLOPS. Don't forget to add the `-fopenmp` compiler flag for OpenMP directives. You might also need to install `libomp-dev` via `sudo apt install libomp-dev`.
 
-Let's check the CPU utilization
-```
-htop
-```
-![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
-
-and benchmark the multithreading implementation:
+Let's benchmark the multithreading implementation:
 ```bash
 python benchmark_numpy.py
 clang-17 -O2 -mno-avx512f -march=native -fopenmp benchmark_mt.c -o benchmark_mt.out && ./benchmark_mt.out
 python plot_benchmark.py
 ```
 ![](/assets/matmul_cpu/benchmark_mt.png){:style="display:block; margin-left:auto; margin-right:auto"}
+
+The CPU utilization:
+```bash
+htop
+```
+![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
