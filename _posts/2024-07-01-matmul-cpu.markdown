@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Beating OpenBLAS' Matrix Multiplication In 150 Lines Of C Code"
+title:  "Beating OpenBLAS' SGEMM In 150 Lines Of C Code"
 excerpt: "In this step by step tutorial we'll implement high-performance fp32 matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize it on CPUs. The final multi-threaded algorithm is faster than OpenBLAS and achieves over 1 TFLOPS across a wide range of matrix sizes on Ryzen 7700."
 date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
