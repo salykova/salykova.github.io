@@ -489,7 +489,6 @@ htop
 ![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
 ## Conclusion
-
 I've truly enjoyed optimizing the code and pushing the hardware to its limits. It was both a challenging and exhilarating experience. I believe that hands-on implementation is the best way to truly understand hardware functionality and code optimization. Our implementation includes the use of kernels, cache/register blocking, and multi-threading. However, there is still room for further optimization through techniques such as manual thread management with pthread and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
 
 **P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
