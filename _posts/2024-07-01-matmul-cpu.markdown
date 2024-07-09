@@ -25,7 +25,7 @@ Matrix multiplication is an essential part of nearly all modern neural networks.
 5. [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) - open-source, based on GotoBLAS
 6. etc.
 
-If you look at the OpenBLAS  [code](https://github.com/OpenMathLib/OpenBLAS/blob/develop/kernel/x86_64/sgemm_kernel_8x4_haswell.c), you'll notice it's a mix of C and low-level assembly code. In fact, OpenBLAS, GotoBLAS, and BLIS are all written in C/FORTRAN/Assembly and contain matmul implementations handcrafted for different CPU types. During runtime, the appropriate function is called depending on the detected CPU device. I challenged myself and asked if it is possible to write a high-performance matmul (across a wide range of matrix sizes) without diving deep into Assembly and Fortran code, at least for my CPU. After some searching on the internet, I found a couple of exciting and educational step-by-step tutorials on how to implement fast matmul from scratch, covering both theoretical and practical aspects:
+If you look at the OpenBLAS  [code](https://github.com/OpenMathLib/OpenBLAS/blob/develop/kernel/x86_64/sgemm_kernel_8x4_haswell.c), you'll notice it's a mix of C and low-level assembly code. In fact, OpenBLAS, GotoBLAS, and BLIS are all written in C/FORTRAN/Assembly and contain matmul implementations handcrafted for different CPU types. During runtime, the appropriate function is called depending on the detected CPU device. I challenged myself and asked if it is possible to write fast matmul without diving deep into Assembly and Fortran code, at least for my CPU. After some searching on the internet, I found a couple of exciting and educational step-by-step tutorials on how to implement high-performance matmul from scratch, covering both theoretical and practical aspects:
 
 1. [Fast Multidimensional Matrix Multiplication on CPU from Scratch](https://siboehm.com/articles/22/Fast-MMM-on-CPU) by Simon Boehm.
 2. [Matrix Multiplication](https://en.algorithmica.org/hpc/algorithms/matmul/) by Sergey Slotin.
@@ -487,5 +487,9 @@ The CPU utilization:
 htop
 ```
 ![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
+
+## Conclusion
+
+I've truly enjoyed optimizing the code and pushing the hardware to its limits. It was both a challenging and exhilarating experience. I believe that hands-on implementation is the best way to truly understand hardware functionality and code optimization. Our implementation includes the use of kernels, cache/register blocking, and multi-threading. However, there is still room for further optimization through techniques such as manual thread management with pthread and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
 
 **P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
