@@ -1,14 +1,18 @@
 ---
 layout: post
 title:  "Beating NumPy's Matrix Multiplication in 150 Lines of C Code"
-excerpt: "In this step by step tutorial we'll implement fast multi-threaded fp32 matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize it on CPU. Our implementation is faster than NumPy with OpenBLAS backend and achieves over 1 TFLOPS across a wide range of matrix sizes on Ryzen 7700."
+excerpt: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize code on CPU. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes."
+description: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize code on CPU. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes."
 date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
 usemathjax: true
 ---
 **TL;DR**
-The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance fp32 matrix multiplication (=SGEMM) on CPU while keeping the code simple and scalable. The implementation follows the [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and outperforms [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) achieving over 1 TFLOPS across a wide range of matrix sizes on AMD Ryzen 7700.
-![](/assets/matmul_cpu/matmul_perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
+The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance fp32 matrix multiplication (=SGEMM) on CPU while keeping the code simple and scalable. The implementation follows [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and on AMD Ryzen 7 7700 outperforms NumPy with [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) amd [MKL](https://de.wikipedia.org/wiki/Math_Kernel_Library) backends, achieving over 1 TFLOPS across a wide range of matrix sizes.
+
+![](/assets/matmul_cpu/perf_vs_openblas.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
+
+![](/assets/matmul_cpu/perf_vs_mkl.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
 By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. In this step by step tutorial, we'll implement SGEMM (=fp32 matrix multiplication) in C from scratch and learn how to optimize and parallelize code on CPUs. This is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
 
