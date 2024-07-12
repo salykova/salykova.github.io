@@ -1,8 +1,8 @@
 ---
 layout: post
 title:  "Beating NumPy's Matrix Multiplication in 150 Lines of C Code"
-excerpt: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize code on CPU. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes."
-description: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication (SGEMM) in C from scratch and learn how to optimize and parallelize code on CPU. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes."
+excerpt: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
+description: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
 date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
 usemathjax: true
