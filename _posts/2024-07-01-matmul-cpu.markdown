@@ -456,7 +456,8 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int jr = 0; jr < nc; jr += NR)
 ```
->It's also possible to parallelize both 2nd and 1st loops as nested loops using `#pragma omp parallel for collapse(2)`, which leads to similar performance when parallelizing only the 2nd loop.
+
+>In the current implementation, only 1 out of 5 loops is parallelized (the 2nd loop around the micro-kernel). For manycore processors (more than 16 cores), consider utilizing nested parallelism and parallelizing 2-3 loops to increase performance (e.g., the 5th, 3rd, and 2nd loops around the micro-kernel).
 
 Together with arithmetic operations, we also want to accelerate the packing of both $\tilde{A}$ and $\tilde{B}$:
 ```c
