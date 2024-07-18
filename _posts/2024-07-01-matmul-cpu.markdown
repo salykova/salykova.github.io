@@ -126,7 +126,7 @@ Theoretically, the CPU can execute 32 FLOP per cycle = 8 (floats in YMM register
 
 ## Naive Implementation
 
-Without loss of generality in this implementation we will assume that matrices stored in column-major order. A matrix `A` of shape `MxN` is stored as contiguous array of length `M*N` and an element `A[row][col]` is accessed via C raw pointer `ptr[col*M + row]`, where `0 <= col <= N-1` and `0 <= row <= M-1`.
+Without loss of generality in this implementation we will assume that matrices stored in column-major order. Matrix `A` of shape `MxN` is stored as contiguous array of length `M*N` and element `A[row][col]` is accessed via C raw pointer `ptr[col*M + row]`, where `0 <= col <= N-1` and `0 <= row <= M-1`.
 ![](/assets/matmul_cpu/mem_layout.png){:width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
 The naive algorithm
@@ -157,12 +157,12 @@ clang-17 -O2 -mno-avx512f -march=native matmul_naive.c -o matmul_naive.out && ./
 Matrix multiplication $C=AB$ can be decomposed into smaller sub-problems. The idea now is that if the smaller sub-problems can be solved quickly, then the entire matmul will be fast. We first partition the matrix $C$ of shape $M \times N$ into small sub-matrices of shape $m_R \times n_R$,  where $n_R \ll N$ and $m_R \ll M$. To calculate $C=AB$, we iterate over $C$ and compute each of its $m_R \times n_R$ sub-matrices.
 ![](/assets/matmul_cpu/matmul_kernel.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-The function that calculates these tiny $m_R \times n_R$ sub-matrices $\bar{C}$ of $C$ is called **kernel** or **micro-kernel**. This is the heart of high-performance matrix multiplication. When we say that a matmul algorithm is optimized for a particular CPU architecture, it often involves kernel optimization. For example, in the BLIS library, the kernels optimized for different processor types can be found under [kernels](https://github.com/flame/blis/tree/master/kernels).
+The function that calculates these tiny $m_R \times n_R$ sub-matrices $\bar{C}$ of $C$ is called **kernel** or **micro-kernel**. This is the heart of high-performance matrix multiplication. When we say that a matmul algorithm is optimized for particular CPU architecture, it often involves kernel optimization. For example, in the BLIS library, the kernels optimized for different processor types can be found under [kernels](https://github.com/flame/blis/tree/master/kernels).
 
 Let's take a closer look at the kernel.
 ![](/assets/matmul_cpu/kernel.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-To calculate a $m_R \times n_R$ sub-matrix $\bar{C}$ of matrix $C$, we multiply matrix $\bar{A}$ of size $m_R \times K$ with a matrix $\bar{B}$ of size $K \times n_R$. If we would do this in naive manner using dot products, we would need to fetch $2K$ (=dot product) elements from RAM to calculate single element of $\bar{C}$ or $2K m_R n_R$ elements in total to calculate $\bar{C}$. There is, however, an alternative strategy that can reduce the number of fetched elements.
+To calculate $m_R \times n_R$ sub-matrix $\bar{C}$ of matrix $C$, we multiply matrix $\bar{A}$ of size $m_R \times K$ with matrix $\bar{B}$ of size $K \times n_R$. If we would do this in naive manner using dot products, we would need to fetch $2K$ (=dot product) elements from RAM to calculate single element of $\bar{C}$ or $2K m_R n_R$ elements in total to calculate $\bar{C}$. There is, however, an alternative strategy that can reduce the number of fetched elements.
 
 We first load matrix $\bar{C}$ into SIMD (=YMM) registers (note that we can do this because both $n_R$ and $m_R$ are small). The subscript $R$ in $n_R$ and $m_R$ stands for "registers". Then we iterate over $K$ and in each iteration we load 1 column of $\bar{A}$ and 1 row of $\bar{B}$ into YMM registers (again, note that both the row and the column vectors are small and fit in the registers). Finally, we perform matrix multiplication between the column and the row vectors to update the matrix $\bar{C}$. After $K$ iterations (=rank-1 updates), the matrix $\bar{C}$ is fully computed.
 ![](/assets/matmul_cpu/kernel_rank.png){:style="display:block; margin-left:auto; margin-right:auto"}
