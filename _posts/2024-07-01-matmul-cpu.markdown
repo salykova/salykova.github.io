@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Going Beyond BLAS: A Tutorial on Matrix Multiplication Optimization"
+title:  "Optimized Multi-Threaded Matrix Multiplication on CPU: A Comprehensive Guide"
 excerpt: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
 description: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
 date:   2024-07-01 11:35:01 +0200
@@ -8,7 +8,7 @@ author: Aman Salykov
 usemathjax: true
 ---
 **TL;DR**
-The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance fp32 matrix multiplication (=SGEMM) on CPU while keeping the code simple and scalable. The implementation follows [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and on AMD Ryzen 7 7700 outperforms NumPy with [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) and [MKL](https://de.wikipedia.org/wiki/Math_Kernel_Library) backends, achieving over 1 TFLOPS across a wide range of matrix sizes.
+The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance fp32 matrix multiplication (=SGEMM) on CPU while keeping the code simple and scalable. The implementation follows [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and on AMD Ryzen 7 7700 outperforms NumPy with [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) and [MKL](https://en.wikipedia.org/wiki/Math_Kernel_Library) backends, achieving over 1 TFLOPS across a wide range of matrix sizes.
 
 ![](/assets/matmul_cpu/perf_vs_openblas.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
@@ -332,6 +332,16 @@ if (m != 16) {
 ```
 The same masks are used to store the results back after rank-1 updates.
 
+**Update 23.07.2024**
+Although at first glance the usage of sequential `_mm256_setr_epi32` and scalar bit shifting may seem slow, Clang is able to auto-vectorize the operations using combinations of `vpaddd` and `vpsllvd` instructions. To be compiler-agnostic and vectorize the code, one can alternatively store the masks in a `static int8_t` array and load elements at offsets `16-m` and `8-m`. For example,
+```c
+static int8_t mask_32[32]
+    __attribute__((aligned(64))) = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                                    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0};
+packed_masks[0] = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask_32[16 - m]));
+packed_masks[1] = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask_32[16 - m + 8]));
+```
+
 Additionally, we copy and pad with zeros (if needed) $m \times K$, $K \times n$ blocks of $A$ and $B$ into arrays with static shapes $m_R \times K$, $n_R \times K$.
 ```c
 void pack_blockA(float* A, float* blockA_packed, const int m, const int M,
@@ -385,7 +395,7 @@ Unlike DRAM, the cache is on-chip memory used to store frequently and recently a
 *Intel Core i9-13900K labelled die shot. Source: [How are Microchips Made?](https://www.youtube.com/watch?v=dX9CGRZwD-w)*
 {:style="display:block; margin-left:auto; margin-right:auto; text-align: center"}
 
-To enhance access speed, CPUs transfer data between main memory and cache in fixed-size chunks called **cache lines** or **cache blocks**. When a cache line is transferred, a corresponding cache entry is created to store it. On Ryzen 7700, the cache line size is [64 bytes](https://en.wikichip.org/wiki//microarchitectures/zen_4#Memory_Hierarchy). The cache takes advantage of how we typically access data. When a single floating-point number from a continuous array in memory is requested, the cache cleverly grabs the next 15 floats along the way and stores them as well. This is why reading data sequentially from a contiguous array is much faster than jumping around to random memory locations. When the processor needs to read or write to a memory location, it first checks the cache for a corresponding entry. If the processor finds the memory location in the cache, a **cache hit** occurs. However, if the memory location is not found in the cache, a **cache miss** occurs. In the case of a cache miss, the cache allocates a new entry and copies the data from main memory. If the cache is full, a [cache replacement policy](https://en.wikipedia.org/wiki/Cache_replacement_policies) kicks in to determine which data gets evicted to make room for new information. Several cache replacement policies exist, with LRU (Least Recently Used), LFU (Least Frequently Used), and LFRU (Least Frequently Recently Used) being the most widely used.
+To enhance access speed, CPUs transfer data between main memory and cache in fixed-size chunks called **cache lines** or **cache blocks**. When a cache line is transferred, a corresponding cache entry is created to store it. On Ryzen 7700, the cache line size is [64 bytes](https://en.wikichip.org/wiki/amd/microarchitectures/zen_4#Memory_Hierarchy). The cache takes advantage of how we typically access data. When a single floating-point number from a continuous array in memory is requested, the cache cleverly grabs the next 15 floats along the way and stores them as well. This is why reading data sequentially from a contiguous array is much faster than jumping around to random memory locations. When the processor needs to read or write to a memory location, it first checks the cache for a corresponding entry. If the processor finds the memory location in the cache, a **cache hit** occurs. However, if the memory location is not found in the cache, a **cache miss** occurs. In the case of a cache miss, the cache allocates a new entry and copies the data from main memory. If the cache is full, a [cache replacement policy](https://en.wikipedia.org/wiki/Cache_replacement_policies) kicks in to determine which data gets evicted to make room for new information. Several cache replacement policies exist, with LRU (Least Recently Used), LFU (Least Frequently Used), and LFRU (Least Frequently Recently Used) being the most widely used.
 
 Similar to registers, once data is loaded into the cache, we want to reuse the data as much as possible to reduce main memory accesses. Given the cache's limited capacity, storing entire input matrices input matrices $C, B, A$  in the cache isn't feasible. Instead, we divide them into smaller blocks, load these blocks into the cache, and reuse them for rank-1 updates. This technique is often referred to as **tiling** or **cache blocking**, allowing us to handle matrices of arbitrary size effectively.
 
