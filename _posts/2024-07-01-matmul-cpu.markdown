@@ -332,8 +332,8 @@ if (m != 16) {
 ```
 The same masks are used to store the results back after rank-1 updates.
 
-**Update 23.07.2024**
-Although at first glance the usage of sequential `_mm256_setr_epi32` and scalar bit shifting may seem slow, Clang is able to auto-vectorize the operations using combinations of `vpaddd` and `vpsllvd` instructions. To be compiler-agnostic and vectorize the code, one can alternatively store the masks in a `static int8_t` array and load elements at offsets `16-m` and `8-m`. For example,
+>**Update 23.07.2024**
+Although at first glance the usage of sequential `_mm256_setr_epi32` and scalar bit shifting may seem slow, Clang is able to auto-vectorize the operations using combinations of `vpaddd` and `vpsllvd` instructions. To be compiler-agnostic and vectorize the code manually, one can alternatively store the mask as `static int8_t` array of size 32 and load it's elements at offsets `16-m` and `8-m`. For example,
 ```c
 static int8_t mask_32[32]
     __attribute__((aligned(64))) = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
