@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Towards OpenBLAS Performance in Multi-Threaded Matrix Multiplication: A Tutorial"
+title:  "Beating OpenBLAS and MKL in 150 lines of C Code: A Tutorial on High-Performance Matrix Multiplication"
 excerpt: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
 description: "In this step by step tutorial we'll implement high-performance multi-threaded matrix multiplication on CPU from scratch and learn how to optimize and parallelize code in C. On Ryzen 7700 our implementation is faster than NumPy with OpenBLAS and MKL backends, achieving over 1 TFLOPS across a wide range of matrix sizes. High-performance GEMM on CPU in C. Fast SGEMM in C. High-performance matrix multiplication on CPU. Fast matrix multiplication in C."
 date:   2024-07-01 11:35:01 +0200
@@ -10,10 +10,12 @@ usemathjax: true
 **TL;DR**
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post is the result of my attempt to implement high-performance fp32 matrix multiplication (=SGEMM) on CPU while keeping the code simple and scalable. The implementation follows [BLIS](https://en.wikipedia.org/wiki/BLIS_(software)) design, works for arbitrary matrix sizes, and on AMD Ryzen 7 7700 outperforms NumPy with [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) and [MKL](https://en.wikipedia.org/wiki/Math_Kernel_Library) backends, achieving over 1 TFLOPS across a wide range of matrix sizes.
 
+\\
 ![](/assets/matmul_cpu/perf_vs_openblas.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
+\\
 ![](/assets/matmul_cpu/perf_vs_mkl.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
-
+\\
 By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. In this step-by-step tutorial, we'll implement SGEMM (fp32 matrix multiplication) in C from scratch and learn how to optimize and parallelize code on CPUs. It is my first time writing a blog post. If you enjoy it, please subscribe and share it! I would be happy to hear feedback from all of you. This tutorial is the first part of my planned two-part blog series. In the second part, we will learn how to optimize matrix multiplication on GPUs. Stay tuned!
 
 **P.S. I'm always eager for new challenges and opportunities. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
@@ -455,7 +457,7 @@ python plot_benchmark.py
 
 ## Multithreading
 
-There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, this second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 7700, cache block sizes of $n_c=1535$, $m_c=1024, k_c=2000$ attain the best performance in the single-threaded case. Given the number of available threads on Ryzen 7700, $Nthreads=16$, we need input matrices with dimensions of at least $2000 \times 16$ to be able to distribute the work over all threads.
+There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, the second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 7700, cache block sizes of $n_c=1535$, $m_c=1024, k_c=2000$ attain the best performance in the single-threaded scenario. Given the number of available cores on Ryzen 7700, $Nthreads=8$, we need input matrices with dimensions of at least $2000 \times 8$ to be able to distribute the work over all cores.
 
 ![](/assets/matmul_cpu/blis_design.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
