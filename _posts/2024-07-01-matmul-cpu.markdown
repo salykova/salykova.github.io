@@ -45,9 +45,9 @@ I highly recommend checking out these well-written and well-spoken tutorials wit
 
 In the next sections, we will implement the algorithm from the paper and compare it against NumPy.
 
-## NumPy Performance
+## NumPy(=OpenBLAS) Performance
 
-By default, if installed via `pip`, numpy uses OpenBLAS on  CPUs. Therefore, throughout this tutorial I will use numpy and OpenBLAS interchangeably. Before performing any benchmarks, it's always good practice to specify your hardware specs and development environment to ensure the results can be reproduced:
+By default, if installed via `pip`, NumPy uses OpenBLAS as backend for high-performance linear algebra operations. The laziest way to benchmark OpenBLAS is to simply invoke matrix multiplication from NumPy. There is some minor overhead due to Python, but for the matrix sizes used in this benchmark, the overhead is negligible and doesn't affect the results. Therefore, throughout this tutorial I will use NumPy and OpenBLAS interchangeably. Before performing any benchmarks, it's always good practice to specify your hardware and development environment to ensure results can be reproduced:
 - CPU: Ryzen 7 7700 8 Cores, 16 Threads
   - Freq: 3.8 GHz
   - Turbo Freq: 5.3 GHz
