@@ -209,18 +209,18 @@ void kernel_16x6(float* A, float* B, float* C, const int M, const int N, const i
 ```
 The function takes as input 3 matrices + their dimensions and calculates a $16\times6$ sub-matrix $\bar{C}$ of $C$. Inside the function, first, declare the variables that reside in YMM registers:
 ```c
-__m256 C_buffer[2][6];
+__m256 C_buffer[6][2];
 __m256 b_packFloat8;
 __m256 a0_packFloat8;
 __m256 a1_packFloat8;
 ```
-The `__m256` datatype is a vector of 8 floats (8x32 = 256 bits) that resides in YMM register. `C_buffer` is a 16x6 sub-matrix of $C$ stored in YMM registers. The first dimension of `C_buffer` is `2`, because we need `16/8=2` registers to store 16 elements. `b_packFloat8`, `a0_packFloat8`, `a1_packFloat8` are column vectors of $\bar{B}$ and $\bar{A}$. Again, we need two vectors to store 16 elements of the column vector of $\bar{A}$.
+The `__m256` datatype is a vector of 8 floats (8x32 = 256 bits) that resides in YMM register. `C_buffer` is a 16x6 sub-matrix of $C$ stored in YMM registers. The second dimension of `C_buffer` is `2`, because we need `16/8=2` registers to store 16 elements. `b_packFloat8`, `a0_packFloat8`, `a1_packFloat8` are column vectors of $\bar{B}$ and $\bar{A}$. Again, we need two registers `a0` and `a1` to store 16 elements of the column vector of $\bar{A}$.
 
 Next, we load the sub-matrix $\bar{C}$ into YMM registers:
 ```c
 for (int j = 0; j < 6; j++) {
-  C_buffer[0][j] = _mm256_loadu_ps(&C[j * M]);
-  C_buffer[1][j] = _mm256_loadu_ps(&C[j * M + 8]);
+  C_buffer[j][0] = _mm256_loadu_ps(&C[j * M]);
+  C_buffer[j][1] = _mm256_loadu_ps(&C[j * M + 8]);
 }
 ```
 SIMD C functions are well documented and can be found in the [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html). For example, [\_mm256_loadu_ps](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_loadu_ps&ig_expand=4100)
@@ -234,7 +234,7 @@ for (int p = 0; p < K; p++) {
   a1_packFloat8 = _mm256_loadu_ps(&A[p * M + 8]);
   b_packFloat8 = _mm256_broadcast_ss(&B[p]);
   C_buffer[0][0] = _mm256_fmadd_ps(a0_packFloat8, b_packFloat8, C_buffer[0][0]);
-  C_buffer[1][0] = _mm256_fmadd_ps(a1_packFloat8, b_packFloat8, C_buffer[1][0]);
+  C_buffer[0][1] = _mm256_fmadd_ps(a1_packFloat8, b_packFloat8, C_buffer[0][1]);
   ...
 }
 ```
@@ -243,8 +243,8 @@ Then repeat the step for the remaining 5 columns. We manually unroll the loop wh
 Finally, we write the sub-matrix `C_buffer` back to `C`:
 ```c
 for (int j = 0; j < 6; j++) {
-  _mm256_storeu_ps(&C[j * M], C_buffer[0][j]);
-  _mm256_storeu_ps(&C[j * M + 8], C_buffer[1][j]);
+  _mm256_storeu_ps(&C[j * M], C_buffer[j][0]);
+  _mm256_storeu_ps(&C[j * M + 8], C_buffer[j][1]);
 }
 ```
 
@@ -306,8 +306,8 @@ First of all, we when loading and storing the elements of $C$, we should pick th
 
 # "j<n" instead "j<6", since n can be less than 6.
 for (int j = 0; j < n; j++) {
-  C_buffer[0][j] = _mm256_loadu_ps(&C[j * M]);
-  C_buffer[1][j] = _mm256_loadu_ps(&C[j * M + 8]);
+  C_buffer[j][0] = _mm256_loadu_ps(&C[j * M]);
+  C_buffer[j][1] = _mm256_loadu_ps(&C[j * M + 8]);
 }
 ```
 Handling the case where the number of overlapped rows $m$ differs from $m_R$ is a bit trickier because `_mm256_loadu_ps` loads 8 elements at once. Fortunately, there is a function called `_mm256_maskload_ps` which loads 8 floats based on mask bits associated with each data element. It takes as input 2 arguments: `const float* data` and `__m256i mask`. `__m256i` is a 256-bit vector of 8x32-bit integers. The most significant bit (MSB) of each integer represents the mask bits. If a mask bit is zero, the corresponding value in the memory location is not loaded and the corresponding field in the return value is set to zero. For example, MSB of unsigned integer `2147483648` (binary representation `10000000 00000000 00000000 00000000`) is `1`, hence corresponding float in `data` will be loaded. On the other hand, MSB of unsigned integer `2147483647` (binary format `01111111 11111111 11111111 11111111`) is `0`, hence the corresponding float in `data` will not be loaded. The function `_mm256_maskstore_ps` works similarly, except it stores data instead of loading.
@@ -327,8 +327,8 @@ if (m != 16) {
                  bit_mask << (m + 1), bit_mask << m);
 
   for (int j = 0; j < n; j++) {
-    C_buffer[0][j] = _mm256_maskload_ps(&C[j * M], masks[0]);
-    C_buffer[1][j] = _mm256_maskload_ps(&C[j * M + 8], masks[1]);
+    C_buffer[j][0] = _mm256_maskload_ps(&C[j * M], masks[0]);
+    C_buffer[j][1] = _mm256_maskload_ps(&C[j * M + 8], masks[1]);
   }
 }
 ```
@@ -457,11 +457,11 @@ python plot_benchmark.py
 
 ## Multithreading
 
-There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, the second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 7700, cache block sizes of $n_c=1535$, $m_c=1024, k_c=2000$ attain the best performance in the single-threaded scenario. Given the number of available cores on Ryzen 7700, $Nthreads=8$, we need input matrices with dimensions of at least $2000 \times 8$ to be able to distribute the work over all cores.
+There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, the second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 7700, cache block sizes of $n_c=1535$, $m_c=1024$ attain the best performance in the single-threaded scenario. Given the number of available cores on Ryzen 7700, we need input matrices with dimensions of at least $\max(m_c, n_c) \times \text{number of cores} = 1535 \times 8 = 12280$ to be able to distribute the work over all cores.
 
 ![](/assets/matmul_cpu/blis_design.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
- In contrast, the last two loops iterate over cache blocks, dividing them into $m_r, n_r$ blocks. Since $n_r, m_r$ are typically very small (<20), these loops are ideal candidates for parallelization. Moreover, we can choose $m_c, n_c$ to be multiples of $Nthreads$ so that the work is evenly distributed across all threads.
+ In contrast, the last two loops iterate over cache blocks, dividing them into $m_r, n_r$ blocks. Since $n_r, m_r$ are typically very small (<20), these loops are ideal candidates for parallelization. Moreover, we can choose $m_c, n_c$ to be multiples of number of cores so that the work is evenly distributed across all cores.
 
  On my machine, parallelizing the second loop results in much better performance compared to the first loop (possibly due to large $n_c$ and little work in each iteration in the first loop). We will therefore parallelize the second loop using OpenMP directives (more on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html)):
 ```c
@@ -471,7 +471,7 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 
 >In the current implementation, only 1 out of 5 loops is parallelized (the 2nd loop around the micro-kernel). For manycore processors (more than 16 cores), consider utilizing nested parallelism and parallelizing 2-3 loops to increase performance (e.g., the 5th, 3rd, and 2nd loops around the micro-kernel).
 
-Together with arithmetic operations, we also want to accelerate the packing of both $\tilde{A}$ and $\tilde{B}$:
+Together with arithmetic operations, we also want to parallelize the packing of both $\tilde{A}$ and $\tilde{B}$:
 ```c
 void pack_blockA(float* A, float* blockA_packed, const int mc, const int kc, const int M)
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
@@ -483,7 +483,13 @@ void pack_blockB(float* B, float* blockB_packed, const int nc, const int kc, con
 #pragma omp parallel for num_threads(NTHREADS) schedule(static)
   for (int j = 0; j < nc; j += NR)
 ```
-Similar to the second loop (and the first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$.
+Similar to the second loop (and the first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$. For the multi-threaded implementation the values
+
+$$m_c = m_r \times \text{number of cores} = m_r \times 8$$
+
+$$n_c = n_r \times \text{number of cores} \times 80 = n_r \times 640$$
+
+provide the best performance on my machine.
 
 Running
 ```bash
@@ -498,12 +504,6 @@ clang-17 -O2 -mno-avx512f -march=native -fopenmp benchmark_mt.c -o benchmark_mt.
 python plot_benchmark.py
 ```
 ![](/assets/matmul_cpu/benchmark_mt.png){:style="display:block; margin-left:auto; margin-right:auto"}
-
-The CPU utilization:
-```bash
-htop
-```
-![](/assets/matmul_cpu/htop.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
 ## Conclusion
 I've truly enjoyed optimizing the code and pushing the hardware to its limits. It was both a challenging and exhilarating experience. I believe that hands-on implementation is the best way to truly understand hardware functionality and code optimization. Our implementation includes the use of kernels, cache/register blocking, and multi-threading. However, there is still room for further optimization through techniques such as manual thread management with pthread and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
