@@ -6,7 +6,6 @@ description: "In this tutorial we'll optimize matrix multiplication on CPU in C 
 date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
 usemathjax: true
-hn: true
 ---
 
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c)
