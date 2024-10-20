@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "1 TFLOPS Matrix Multiplication on an 8-core CPU in C from Scratch"
+title:  "TFLOPS Matrix Multiplication on an 8-core CPU in C from Scratch"
 excerpt: "In this tutorial we'll optimize matrix multiplication on CPU in C achieving over 1 TFLOPS. The final optimized implementation is just 150 LOC and outperforms OpenBLAS on Ryzen 7700. High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
 description: "In this tutorial we'll optimize matrix multiplication on CPU in C achieving over 1 TFLOPS. The final optimized implementation is just 150 LOC and outperforms OpenBLAS on Ryzen 7700. High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
 date:   2024-07-01 11:35:01 +0200
