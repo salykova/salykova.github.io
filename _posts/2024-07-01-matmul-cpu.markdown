@@ -158,7 +158,7 @@ clang-17 -O2 -mno-avx512f -march=native matmul_naive.c -o matmul_naive.out && ./
 
 ## Kernel
 
-Matrix multiplication $C=AB$ can be decomposed into smaller sub-problems. The idea now is that if the smaller sub-problems can be solved quickly, then the entire matmul will be fast. We first partition the matrix $C$ of shape $M \times N$ into small sub-matrices of shape $m_R \times n_R$,  where $n_R \ll N$ and $m_R \ll M$. To calculate $C=AB$, we iterate over $C$ and compute each of its $m_R \times n_R$ sub-matrices.
+Matrix multiplication $C=AB$ can be decomposed into smaller sub-problems. The idea now is that if the smaller sub-problems can be solved fast, then the entire matmul will be fast. We first partition the matrix $C$ of shape $M \times N$ into small sub-matrices of shape $m_R \times n_R$,  where $n_R \ll N$ and $m_R \ll M$. To calculate $C=AB$, we iterate over $C$ and compute each of its $m_R \times n_R$ sub-matrices.
 ![](/assets/matmul_cpu/matmul_kernel.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
 The function that calculates these tiny $m_R \times n_R$ sub-matrices $\bar{C}$ of $C$ is called **kernel** or **micro-kernel**. This is the heart of high-performance matrix multiplication. When we say that a matmul algorithm is optimized for particular CPU architecture, it often involves kernel optimization. For example, in the BLIS library, the kernels optimized for different processor types can be found under [kernels](https://github.com/flame/blis/tree/master/kernels).
