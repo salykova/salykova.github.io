@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Beating NumPy's Matrix Multiplication in 150 lines of C code"
+title:  "Beating OpenBLAS and MKL in FP32 Matrix Multiplication From Scratch"
 excerpt: "In this step by step tutorial we'll optimize matrix multiplication on CPU in C achieving over 1 TFLOPS on an 8-core Ryzen 7 7700. The final optimized implementation is just 150 LOC and outperforms both OpenBLAS and MKL on Ryzen 7 7700. High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
 description: "In this step by step tutorial we'll optimize matrix multiplication on CPU in C achieving over 1 TFLOPS on an 8-core Ryzen 7 7700. The final optimized implementation is just 150 LOC and outperforms both OpenBLAS and MKL on Ryzen 7 7700. High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
 date:   2024-07-01 11:35:01 +0200
@@ -10,15 +10,15 @@ usemathjax: true
 
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c)
 
-**TL;DR** In this step by step tutorial we'll optimize matrix multiplication on CPU in C achieving over 1 TFLOPS on an 8-core Ryzen 7 7700. The final optimized implementation is just 150 LOC and outperforms both OpenBLAS and MKL on Ryzen 7 7700.
+**TL;DR** In this tutorial we'll optimize matrix multiplication step by step on CPU achieving over 1 TFLOPS on wide range of matrix sizes. The final optimized implementation is simple, scalable code that outperforms both OpenBLAS/MKL and works for arbitrary matrix sizes.
 
 \\
-![](/assets/matmul_cpu/perf_vs_openblas.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
+![](/assets/matmul_cpu/perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
 \\
-![](/assets/matmul_cpu/perf_vs_mkl.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
-\\
-By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. In this step-by-step tutorial, we'll implement SGEMM (fp32 matrix multiplication) in C from scratch and learn how to optimize and parallelize code on CPUs. It is my first time writing a blog post. If you enjoy it, please like, subscribe and share! This blog post is the first part of my planned two-part blog series. In the second part, we will learn how to multiply matrices faster than cuBLAS. Stay tuned!
+By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors.
+
+It is my first time writing a blog post. If you enjoy it, please like, subscribe and share! This blog post is the first part of my planned two-part blog series. In the second part, we will learn how to multiply matrices faster than cuBLAS. Stay tuned!
 
 **P.S. If you're interested in collaborating to create something amazing, feel free to reach out! My contact information is available on the homepage.**
 
@@ -33,23 +33,22 @@ Matrix multiplication is an essential part of nearly all modern neural networks.
 5. [OpenBLAS](https://en.wikipedia.org/wiki/OpenBLAS) - open-source, based on GotoBLAS
 6. etc.
 
-If you look at the OpenBLAS  [code](https://github.com/OpenMathLib/OpenBLAS/blob/develop/kernel/x86_64/sgemm_kernel_8x4_haswell.c), you'll notice it's a mix of C and low-level assembly code. In fact, OpenBLAS, GotoBLAS, and BLIS are all written in C/FORTRAN/Assembly and contain matmul implementations handcrafted for different CPU types. During runtime, the appropriate function is called depending on the detected CPU device. I challenged myself and asked if it is possible to write fast matmul without diving deep into Assembly and Fortran code, at least for my CPU. After some searching on the internet, I found a couple of exciting and educational step-by-step tutorials on how to implement high-performance matmul from scratch, covering both theoretical and practical aspects:
+If you look at the OpenBLAS  [code](https://github.com/OpenMathLib/OpenBLAS/blob/develop/kernel/x86_64/sgemm_kernel_8x4_haswell.c), you'll notice it's a mix of C and low-level assembly code. In fact, OpenBLAS, GotoBLAS, and BLIS are all written in C/FORTRAN/Assembly and contain matmul implementations handcrafted for different CPU types. During runtime, the appropriate function is called depending on the detected CPU device. I challenged myself by asking if it was possible to implement fast matmul that would be competetive with OpenBLAS/MKL without diving deep into Assembly and Fortran code, at least for my CPU. After some internet research, I found a few exciting and educational step-by-step tutorials on implementing high-performance matrix multiplication from scratch, covering both theoretical and practical aspects:
 
 1. [Fast Multidimensional Matrix Multiplication on CPU from Scratch](https://siboehm.com/articles/22/Fast-MMM-on-CPU) by Simon Boehm.
 2. [Matrix Multiplication](https://en.algorithmica.org/hpc/algorithms/matmul/) by Sergey Slotin.
 3. [Geohot's](https://en.wikipedia.org/wiki/George_Hotz) famous stream [Can you multiply a matrix?](https://www.youtube.com/watch?v=VgSQ1GOC86s)
 
-I highly recommend checking out these well-written and well-spoken tutorials with alternative matmul implementations. They helped me better understand the topic and, in some sense, motivated me to write a different implementation. Why? The reason is that all three solutions above work only for specific matrix sizes and do not achieve NumPy's multi-threaded speed (except for Geohot's implementation, which is comparable to NumPy in terms of speed but again works only for specific matrix sizes and requires an extra [preswizzle](https://github.com/tinygrad/tinygrad/blob/master/extra/gemm/gemm.c#L130) step, resulting in a full copy of one of the input matrices). So, I wasn't satisfied with the results and continued researching until I stumbled across two fascinating papers: "[Anatomy of High-Performance Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/GotoTOMS_final.pdf)" and "[Anatomy of High-Performance Many-Threaded Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/blis3_ipdps14.pdf)". The former presents the BLAS implementation known as GotoBLAS, developed by [Kazushige Goto](https://en.wikipedia.org/wiki/Kazushige_Goto). The latter briefly reviews the design of matmul op used in BLIS (an extended version of GotoBLAS) and discusses different parallelization possibilities for the matmul algorithm. After reading these papers I felt that the BLIS matmul design could potentially achieve all my goals:
+I highly recommend checking out these well-written and well-spoken tutorials with alternative matmul implementations. They helped me better understand the topic and, in some sense, motivated me to write a different implementation. Why? The reason is that all three solutions above work only for specific matrix sizes and do not achieve NumPy's multi-threaded speed. So, I wasn't satisfied with the results and continued researching until I stumbled across two fascinating papers: "[Anatomy of High-Performance Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/GotoTOMS_final.pdf)" and "[Anatomy of High-Performance Many-Threaded Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/blis3_ipdps14.pdf)". The former presents the BLAS implementation known as GotoBLAS, developed by [Kazushige Goto](https://en.wikipedia.org/wiki/Kazushige_Goto). The latter briefly reviews the design of matmul op used in BLIS (an extended version of GotoBLAS) and discusses different parallelization possibilities for the matmul algorithm. After reading these papers I felt that the BLIS matmul design could potentially achieve all my goals:
 
 - NumPy-like multi-threading performance across a broad range of matrix sizes
 - Simple and scalable C code
 - Support for a wide variety of processors
 
-In the next sections, we will implement the algorithm from the paper and compare it against NumPy.
 
 ## NumPy(=OpenBLAS) Performance
 
-By default, if installed via `pip`, NumPy uses OpenBLAS as backend for high-performance linear algebra operations. The laziest way to benchmark OpenBLAS is to simply invoke matrix multiplication from NumPy. There is some minor overhead due to Python, but for the matrix sizes used in this benchmark, the overhead is negligible and doesn't affect the results. Therefore, throughout this tutorial I will use NumPy and OpenBLAS interchangeably. Before performing any benchmarks, it's always good practice to specify your hardware and development environment to ensure results can be reproduced:
+By default, if installed via `pip`, NumPy uses OpenBLAS as backend for high-performance linear algebra operations. The laziest way to benchmark OpenBLAS is to simply invoke matrix multiplication from NumPy. There is some minor overhead due to Python, but for the matrix sizes used in this benchmark, the overhead is negligible and doesn't affect the results. Therefore, throughout this tutorial I will use NumPy and OpenBLAS interchangeably. Note that in the github repo I compare matmul.c vs OpenBLAS C API (C vs. C comparison bypassing python), but in the tutorial I use numpy just for simplicity. Before performing any benchmarks, it's always good practice to specify your hardware and test environment to ensure the results can be reproduced:
 - CPU: Ryzen 7 7700 8 Cores, 16 Threads
   - Freq: 3.8 GHz
   - Turbo Freq: 5.3 GHz
@@ -83,7 +82,7 @@ FLOPS = FLOP/exec_time
 GFLOPS = FLOPS/1e9
 ```
 
->**Important!** When benchmarking code, try to minimize the number of running tasks, especially when measuring multi-threaded code. Results obtained on Windows are usually lower than on Linux.
+>**Important!** When benchmarking code, try to minimize the number of running tasks, especially when measuring multi-threaded code. Results obtained on Windows are usually lower than on Linux. Always lock CPU clock and disable auto-boost to achieve consistent results.
 
 To benchmark numpy's matmul, we will use `benchmark_numpy.py`, which executes the code snippet above for different matrix sizes in a loop and measures peak/average FLOPS. By default, numpy will use all available cores; however, we can easily change this by setting environment variables before importing numpy and matplotlib
 ```python
