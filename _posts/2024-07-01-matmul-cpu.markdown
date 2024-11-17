@@ -7,16 +7,11 @@ date:   2024-07-01 11:35:01 +0200
 author: Aman Salykov
 usemathjax: true
 ---
+![](/assets/matmul_cpu/perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
 The code from the tutorial is available at [matmul.c](https://github.com/salykova/matmul.c)
 
-**TL;DR** In this tutorial we'll optimize matrix multiplication step by step on CPU achieving over 1 TFLOPS on wide range of matrix sizes. The final optimized implementation is simple, scalable code that outperforms both OpenBLAS/MKL and works for arbitrary matrix sizes.
-
-\\
-![](/assets/matmul_cpu/perf.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
-
-\\
-By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors.
+**TL;DR** In this tutorial we'll optimize matrix multiplication step by step on CPU achieving over 1 TFLOPS on wide range of matrix sizes. The final optimized implementation is simple, scalable code that outperforms both OpenBLAS/MKL and works for arbitrary matrix sizes. By efficiently parallelizing the code with **just 3 lines of OpenMP directives**, it's both scalable and easy to understand. The implementation hasn't been tested on other CPUs, so I would appreciate feedback on its performance on your hardware. Although the code targets a wide variety of processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning the hyperparameters, such as *the number of threads, kernel, and block sizes*, unless you are running it on a Ryzen 7700(X). Additionally, on some Intel CPUs with AVX-512, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors.
 
 It is my first time writing a blog post. If you enjoy it, please like, subscribe and share! This blog post is the first part of my planned two-part blog series. In the second part, we will learn how to multiply matrices faster than cuBLAS. Stay tuned!
 
@@ -507,4 +502,4 @@ python plot_benchmark.py
 ![](/assets/matmul_cpu/benchmark_mt.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
 ## Conclusion
-I've truly enjoyed optimizing the code and pushing the hardware to its limits. It was both a challenging and exhilarating experience. I believe that hands-on implementation is the best way to truly understand hardware functionality and code optimization. Our implementation includes the use of kernels, cache/register blocking, and multi-threading. However, there is still room for further optimization through techniques such as manual thread management with pthread and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
+I really enjoyed optimizing the implementation, it was both challenging and fun project. I believe that a hands-on implementation is the best way to understand hardware functionality and code optimization methods. Our implementation includes the use of kernels, cache/register blocking, and multi-threading. However, there is still room for further optimization through techniques such as manual thread management with pthread and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
