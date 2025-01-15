@@ -8,7 +8,7 @@ author: Aman Salykov
 usemathjax: true
 ---
 
->This project is mainly inspired by the outstanding works of Andrej Karpathy, George Hotz, Scott Gray, Horace He, Philippe Tillet, Jeremy Howard, Lei Mao and the best CUDA hackers from the [GPU MODE](https://github.com/gpu-mode) community ([Discord server](https://discord.gg/gpumode)). A special thanks to Mark Saroufim and Andreas Köpf for running GPU MODE and all you've done for the community.
+>This project is inspired by the outstanding works of Andrej Karpathy, George Hotz, Scott Gray, Horace He, Philippe Tillet, Jeremy Howard, Lei Mao and the best CUDA hackers from the [GPU MODE](https://github.com/gpu-mode) community ([Discord server](https://discord.gg/gpumode)). A special thanks to Mark Saroufim and Andreas Köpf for running GPU MODE and all you've done for the community.
 
 The code is available at [sgemm.cu](https://github.com/salykova/sgemm.cu). This article complements my [blog post](https://salykova.github.io/matmul), which covers the implementation of FP32 matrix multiplication that outperforms BLAS libraries on modern Intel and AMD CPUs. Today we'll walk through an implementation of the SGEMM (Single-precision GEneral Matrix Multiply) operation defined as `C := alpha*A*B + beta*C`. We will review three different kernels, each optimized for specific matrix size problems. While the implementation is expected to deliver high performance on Ada/Ampere/Volta/Turing devices, it was specifically fine-tuned for and tested on a local NVIDIA RTX 3090 (=GA102 chip: RTX 3080, A10, A40, A6000). I’d also like to mention that the high-level algorithm design used in this project was developed by the excellent engineers at NVIDIA and has been extensively studied in prior works on cuBLAS and CUTLASS. My main contribution was translating this high-level design into efficient CUDA/PTX code. The goal of this project wasn't to create an SGEMM implementation that would magically outperform cuBLAS on all GPUs and all matrix sizes. This is especially pointless, given the open-sourced, lightweight CUTLASS library. Instead, the code demonstrates the capabilities of the modern NVCC compiler and presents optimization techniques that can be applied to develop custom SGEMM kernels tailored to specific matrix size problems and GPU architectures. This project primarily targets CUDA learners and aims to bridge the gap between SGEMM implementations explained in books/blogs and those used in NVIDIA's BLAS libraries. The achieved performance is shown below, comparing results with locked and unlocked GPU core frequencies against cuBLAS and Simon Boehm’s highly cited work (used in llamafile, aka tinyBLAS). I plan to continue publishing educational content on high-performance kernels used in AI/ML. Let me know what topics you’d like to see next! Projects currently in development: beating NVIDIA on Tensor Cores, Stream-K GEMM, FlashAttention, xLSTM. If you enjoy content like this and want to see more, please share the article. Your feedback would be greatly appreciated!
 
@@ -348,7 +348,7 @@ Note that `block_c += block_a[idx] * block_b[idx]` doesn't depend on `blocks[pre
 
 We've already introduced several parameters such as block sizes $m_s, k_s, n_s$ and number of threads per thread block. The choice of these parameters highly depends on the shapes of the operands $A, B, C$, as well as the underlying GPU architecture. For example, cuBLAS implements multiple SGEMM kernels optimized for various matrix shapes and GPU architectures. At runtime, it selects the most appropriate kernel using a heuristic approach. The block sizes $m_s, k_s, n_s$ affect not only how the data will be fetched from global memory, but also how the work in all subsequent steps (shared memory loads, arithmetic operations, global memory stores) is organized among the threads to achieve the best possible performance. The choice of the block sizes and the number of threads per thread block also impact shared memory / register usage, which can result in decreased performance if not taken into account. As you might expect, identifying optimal parameter values requires excellent understanding of hardware and extensive experimentation. Fortunately, SGEMM is a well-studied problem and we can use the results from previous studies of cuBLAS and CUTLASS. For large square matrices (`M=N=K > 1024`) the combinations of $m_S \times n_S$ such as $128 \times 256$, $128 \times 128$ and $256 \times 128$ lead to optimal performance. From my tests, the configuration $m_s \times n_s \times k_s = 128 \times 128 \times 8$ with **256 threads per thread block** achieved the highest TFLOP/S on my local RTX 3090 for matrix size problems `1024 <= M=N=K <= 2500`. Therefore, we will start with implementation of a `128x128x8` SGEMM kernel. Now that we know the block dimensions and the number of threads per thread block, let’s discuss how to efficiently organize data loading from global memory and storage into shared memory.
 
-First, we need to load `128x8` submatrix $\tilde{A}$ using 256 threads. This results in each thread loading `128*8/256 = 4` float elements from global memory. There several different ways of how to organize loading of the block. For global memory reads/stores you always want your accesses to be contiguous or *coalesced*, so that 32 threads in a wrap access 32 consecutive floats in memory. If a memory access is coalesced the minimum number of memory transactions will be used. However, it is not possible in case of the $\tilde{A}$ block: each row of the block contains only 8 consecutive elements. Nevertheless, even in such cases, consecutive threads in a wrap accessing consecutive elements in memory is preferable and usually results in better performance. The figure below shows how loading of the block $\tilde{A}$ is implemented. Here, different colors represent different threads, whereas only first 16 threads are shown for simplicity. Consecutive 4 rows are loaded by 8 consecutive threads: the rows 1-4 are loaded by threads 0-7, the rows 5-8 are loaded by threads 8-15, the rows 9-12 are loaded by threads 16-23 and so on, with the last  rows 125-128 are loaded by threads 248-255. We also transpose the block $\tilde{A}$ while storing in shared memory for better memory access pattern during the next computation step. Note how each thread stores 4 consecutive elements in shared memory. This allows us to use PTX vectorized stores `st.shared.v4.f32`.
+First, we need to load `128x8` submatrix $\tilde{A}$ using 256 threads. This results in each thread loading `128*8/256 = 4` float elements from global memory. There are several different ways to organize the loading of the block. For global memory reads/stores you always want your accesses to be contiguous or *coalesced*, so that 32 threads in a wrap access 32 consecutive floats in memory. If a memory access is coalesced the minimum number of memory transactions will be used. However, it is not possible in case of the $\tilde{A}$ block: each row of the block contains only 8 consecutive elements. Nevertheless, even in such cases, consecutive threads in a wrap accessing consecutive elements in memory is preferable and usually results in better performance. The figure below shows how the loading of the block $\tilde{A}$ is implemented. Here, different colors represent different threads, whereas only first 16 threads are shown for simplicity. Four consecutive rows are loaded by 8 consecutive threads: the rows 1-4 are loaded by threads 0-7, the rows 5-8 are loaded by threads 8-15, the rows 9-12 are loaded by threads 16-23 and so on, with the last rows 125-128 are loaded by threads 248-255. We also transpose the block $\tilde{A}$ while storing in shared memory for better memory access pattern during the next computation step. Note how each thread stores 4 consecutive elements in shared memory. This allows us to use PTX vectorized stores `st.shared.v4.f32`.
 
 ![a_gmem_loads](/assets/matmul_gpu/a_gmem_loads.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
@@ -443,7 +443,7 @@ Each thread in a wrap computes four `4x4` sub-matrices (=accumulators) within $\
 Bringing everything together, the entire SGEMM algorithm can be visualized as follows:
 ![cutlass_sgemm](/assets/matmul_gpu/cutlass_sgemm.png){:width="70%" style="display:block; margin-left:auto; margin-right:auto"}
 
-As you might expect, the accumulators are updated multiple times during computation and need to be stored in the fastest available memory - the register files. Each thread allocates `float accumulator[8][8]`, so that the entire block $\tilde{C}$ of size $128 \times 128$ is stored in registers by the `256` threads. This works because `256=16*16`, and the combined arrangement `(16*8)x(16*8)=128x128` matches the size of $\tilde{C}$. Just as we used double buffering to load the blocks $\tilde{A}$ and $\tilde{B}$ (from global memory to shared memory), we now also double buffer the fragments to minimize memory transfer latencies when moving data from shared memory to registers. The pseudocode for the algorithm can be written as follows:
+As you might expect, the accumulators are frequently updated during the computation and need to be stored in the fastest memory - the register files. Each thread allocates `float accumulator[8][8]`, so that the entire block $\tilde{C}$ of size $128 \times 128$ is stored in registers by the `256` threads. This works because `256=16*16`, and the combined arrangement `(16*8)x(16*8)=128x128` matches the size of $\tilde{C}$. Just as we used double buffering to load the blocks $\tilde{A}$ and $\tilde{B}$ (from global memory to shared memory), we now also double buffer the fragments to minimize memory transfer latencies when moving data from shared memory to registers. The pseudocode for the algorithm can be written as follows:
 
 ```c
 // Pseudocode
@@ -458,34 +458,42 @@ block_b[0] = load first block of matrix B
 fragment_a[0] = load first fragment from block_a[0]
 fragment_b[0] = load first fragment from block_b[0]
 
-for (i=0; i<(K/ks-1); i++) {
-    block_idx = i % 2
-    block_prefetch_idx = (i+1) % 2
+for (block_k=0; block_k<(K/ks-1); block_k++) {
+    block_idx = block_k % 2
+    block_prefetch_idx = (block_k+1) % 2
     // prefetch next blocks (Shared Memory Double buffering)
     block_a[block_prefetch_idx] = load next block of matrix A
     block_a[block_prefetch_idx] = load next block of matrix B
-    for (int j=0; j<8; j++) {
-        frag_idx = j % 2
-        frag_prefetch_idx = (j + 1) % 2
+    for (int warp_k=0; warp_k<8; warp_k++) {
+        frag_idx = warp_k % 2
+        frag_prefetch_idx = (warp_k + 1) % 2
         // prefetch next fragments (Register Double buffering)
         fragment_a[frag_prefetch_idx] = load next fragment from block_a[block_idx]
         fragment_b[frag_prefetch_idx] = load next fragment from block_b[block_idx]
         // use fragments loaded in previous iteration to calculate matrix product
-        accumulator += fragment_a[frag_idx] * fragment_b[frag_idx]
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                accumulator[i][j] += fragment_a[frag_idx][i] * fragment_b[frag_idx][j];
+            }
+        }
     }
     fragment_a[0] = load first fragment from block_a[block_prefetch_idx]
     fragment_b[0] = load first fragment from block_b[block_prefetch_idx]
 }
 
 // final update of the accumulator using last blocks
-for (int j=0; j<8; j++) {
-    frag_idx = j % 2
-    frag_prefetch_idx = (j + 1) % 2
+for (int warp_k=0; warp_k<8; warp_k++) {
+    frag_idx = warp_k % 2
+    frag_prefetch_idx = (warp_k + 1) % 2
     // prefetch next fragments (Register Double buffering)
     fragment_a[frag_prefetch_idx] = load next fragment from block_a[block_prefetch_idx]
     fragment_b[frag_prefetch_idx] = load next fragment from block_b[block_prefetch_idx]
     // use fragments loaded in previous iteration to calculate matrix product
-    accumulator += fragment_a[frag_idx] * fragment_b[frag_idx]
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            accumulator[i][j] += fragment_a[frag_idx][i] * fragment_b[frag_idx][j];
+        }
+    }
 }
 
 // After completing the matrix multiplication C=A*B, we perform one final update to the accumulator
@@ -522,12 +530,12 @@ To compute $C := \alpha AB + \beta C$, we make a slight adjustment to the proces
 So far, we have discussed the design of the `128x128x8` SGEMM kernel. Its implementation is available at [128x128x8.cuh](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x128x8.cuh) and closely follows the pseudo-code outlined earlier. Let’s now benchmark this kernel to evaluate its performance. First, we conduct a benchmark with locked clock frequencies:
 ![128x128x8_lock](/assets/matmul_gpu/128x128x8_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-The benchmark results indicate that the implementation outperforms cuBLAS when clock speeds remain constant. However, performance alone is not enough; we also need to consider power consumption. To evaluate both metrics, we run the benchmark with unlocked clock frequencies:
+The benchmark results show that the implementation outperforms cuBLAS when clock speeds remain constant. However, performance alone is not enough; we also need to consider power consumption. To evaluate both metrics, we run the benchmark with unlocked clock frequencies:
 ![128x128x8](/assets/matmul_gpu/128x128x8.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-This reveals the effect of GPU power limit throttling. While the `128x128x8` kernel is, on average, 3–4% faster than cuBLAS, it consumes 12% more power. This increased power consumption causes reduced clock speeds and overall performance degradation for matrix sizes `m=n=k>4000`. Clearly, optimizing **both** runtime and power consumption is critical for achieving a balanced and efficient implementation.
+This reveals the effect of throttling due to reaching power limits. While the `128x128x8` kernel is, on average, 3–4% faster than cuBLAS, it consumes 12% more power. The increased power consumption causes the GPU to operate near the power limit for matrix sizes `m=n=k>4000`, resulting in reduced clock speeds and overall performance degradation. This the reason why optimizing **both** runtime and power consumption is required for achieving a balanced and efficient implementation.
 
-We can slightly improve the performance of the kernel by employing vectorized global texture loads. The implementation is available at [128x128x8_texld](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x128x8_texld.cuh). Since these loads impose alignment constraints on the input data, we first verify the memory alignment and ensure the leading dimensions of matrices `A` and `B` are divisible by 4:
+We can slightly improve performance of the kernel by employing vectorized global texture loads. The implementation is available at [128x128x8_texld](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x128x8_texld.cuh). Since these loads impose alignment constraints on the input data, we first verify the memory alignment and ensure the leading dimensions of matrices `A` and `B` are divisible by 4:
 
 ```c
 bool is_aligned = (((unsigned)lda & 3u) == 0) && (((unsigned)ldb & 3u) == 0)
@@ -575,7 +583,7 @@ if (is_aligned) {
 }
 ```
 
-Within the kernel, we load data through texture objects using the `tex1Dfetch` command, which compiles to a single PTX instruction:
+Within the kernel, we load data through texture objects using the `tex1Dfetch` function, which compiles to a single PTX instruction:
 
 ```cpp
 float4 texld_a_buffer;
@@ -586,12 +594,12 @@ We use global texture loads over normal vectorized global loads (`ld.global.v4.f
 ![128x128x8_texld_lock](/assets/matmul_gpu/128x128x8_texld_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 ![128x128x8_texld](/assets/matmul_gpu/128x128x8_texld.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Lastly, we developed a [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging asynchronous copy instructions (`cp.async.ca.shared.global`) available on the Ampere architecture. These instructions enable asynchronous transfers from global to shared memory, reducing register usage and overlapping data transfers with computations:
+Lastly, we developed a [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging bigger block size $n_S=256$ and asynchronous copy instructions (`cp.async.ca.shared.global`) available on the Ampere architecture. These instructions enable asynchronous transfers from global to shared memory, reducing register usage and overlapping data transfers with computations:
 
 ![cp_async](/assets/matmul_gpu/cp_async.png){:width="30%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Using `cp.async` in the `128x128x8` kernel alone degrades performance - possibly due to higher latencies of the `cp.async` instructions or suboptimal compiler optimizations. However, combining increased block sizes with `cp.async` yields superior results in both speed and power efficiency:
+By simply replacing the normal global load instructions with `cp.async` in the `128x128x8` kernel degrades performance - possibly due to higher latencies of the `cp.async` instructions or suboptimal compiler optimizations. However, combining increased block size with `cp.async` yields superior results in both speed and power efficiency:
 ![128x256x8_lock](/assets/matmul_gpu/128x256x8_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 ![128x256x8](/assets/matmul_gpu/128x256x8.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Our final implementation combines the `128x128x8` and `128x256x8` kernels. For smaller matrices `m=n < 2500`, we use the `128x128x8 kernel`; otherwise, the `128x256x8` kernel. I would also like to highlight that all three kernels follow the same design principles, differing only in block dimensions and global->shared memory transfer methods.
+Our final implementation combines the `128x128x8` and `128x256x8` kernels. For smaller matrices `m=n < 2500`, we use the `128x128x8` kernel, otherwise, the `128x256x8` kernel. I would also like to mention that all three kernels follow the same design principles, differing only in block dimensions and global->shared memory transfer methods.
