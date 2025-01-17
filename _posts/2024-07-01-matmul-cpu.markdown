@@ -9,4 +9,4 @@ usemathjax: true
 archived: true
 ---
 
->This blog post has been archived and is no longer accessible. For an updated version with improved performance, please check [Beating OpenBLAS in FP32 Matrix Multiplication](https://salykova.github.io/matmul).
+>This blog post has been archived and is no longer accessible. For the updated version with improved performance, please check [Beating OpenBLAS in FP32 Matrix Multiplication](https://salykova.github.io/matmul).
