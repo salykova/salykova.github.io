@@ -535,14 +535,14 @@ The benchmark results show that the implementation outperforms cuBLAS when clock
 
 This reveals the effect of throttling due to reaching power limits. While the `128x128x8` kernel is, on average, 3–4% faster than cuBLAS, it consumes 12% more power. The increased power consumption causes the GPU to operate near the power limit for matrix sizes `m=n=k>4000`, resulting in reduced clock speeds and overall performance degradation. This the reason why optimizing **both** runtime and power consumption is required for achieving a balanced and efficient implementation.
 
-We can slightly improve performance of the kernel by employing vectorized global texture loads. The implementation is available at [128x128x8_texld](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x128x8_texld.cuh). Since these loads impose alignment constraints on the input data, we first verify the memory alignment and ensure the leading dimensions of matrices `A` and `B` are divisible by 4:
+We can slightly improve the runtime of the kernel by utilizing vectorized global texture loads. The new kernel is available at [128x128x8_texld](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x128x8_texld.cuh). Since the vectorized load instructions impose alignment constraints on the input data, we first verify the memory alignment and ensure the leading dimensions of matrices `A` and `B` are divisible by 4:
 
 ```c
 bool is_aligned = (((unsigned)lda & 3u) == 0) && (((unsigned)ldb & 3u) == 0)
                     && (((unsigned long)A & 15u) == 0) && (((unsigned long)B & 15u) == 0);
 ```
 
-If the input data is aligned, we create texture objects, texture descriptors, and resource descriptors. These are configured to handle the `float` data type with four 32-bit channels (x, y, z, w). The texture objects are then bound to the operands `A, B`, and passed to the kernel instead of raw pointers `A, B`.
+If the input data is aligned, we can use the vectorized load instructions. First we need to create texture objects, texture descriptors, and resource descriptors. These are configured to handle `float` data type with four 32-bit channels (x, y, z, w). The texture objects are then bound to the operands `A, B`, and passed to the kernel instead of raw pointers `A, B`.
 
 ```c
 cudaResourceDesc resDesc;
@@ -594,12 +594,12 @@ We use global texture loads over normal vectorized global loads (`ld.global.v4.f
 ![128x128x8_texld_lock](/assets/matmul_gpu/128x128x8_texld_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 ![128x128x8_texld](/assets/matmul_gpu/128x128x8_texld.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Lastly, we developed a [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging bigger block size $n_S=256$ and asynchronous copy instructions (`cp.async.ca.shared.global`) available on the Ampere architecture. These instructions enable asynchronous transfers from global to shared memory, reducing register usage and overlapping data transfers with computations:
+Lastly, we developed an [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging bigger block size $n_S=256$ and asynchronous copy instructions (`cp.async.ca.shared.global`) available on the Ampere architecture. These instructions enable asynchronous transfers from global memory directly to shared memory, reducing register usage:
 
 ![cp_async](/assets/matmul_gpu/cp_async.png){:width="30%" style="display:block; margin-left:auto; margin-right:auto"}
 
-By simply replacing the normal global load instructions with `cp.async` in the `128x128x8` kernel degrades performance - possibly due to higher latencies of the `cp.async` instructions or suboptimal compiler optimizations. However, combining increased block size with `cp.async` yields superior results in both speed and power efficiency:
+By simply replacing the normal global load instructions with `cp.async` in the `128x128x8` kernel results in degraded performance - possibly due to higher latencies of the `cp.async` instructions or suboptimal compiler optimizations. However, combining increased block size with `cp.async` yields superior results in both speed and power efficiency:
 ![128x256x8_lock](/assets/matmul_gpu/128x256x8_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 ![128x256x8](/assets/matmul_gpu/128x256x8.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Our final implementation combines the `128x128x8` and `128x256x8` kernels. For smaller matrices `m=n < 2500`, we use the `128x128x8` kernel, otherwise, the `128x256x8` kernel. I would also like to mention that all three kernels follow the same design principles, differing only in block dimensions and global->shared memory transfer methods.
+Our final implementation combines the `128x128x8` and `128x256x8` kernels. For smaller matrices `m=n < 2500`, we use the `128x128x8` kernel, otherwise, the `128x256x8` kernel.
