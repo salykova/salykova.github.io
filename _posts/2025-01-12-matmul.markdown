@@ -12,7 +12,7 @@ usemathjax: true
 
 **TL;DR** The code is available at [matmul.c](https://github.com/salykova/matmul.c). In this tutorial we'll step-by-step optimize multi-threaded fp32 matrix multiplication on CPU outperforming OpenBLAS on wide range of matrix sizes. The algorithm follows the BLIS design and is implemented in simple, scalable C code parallelized with OpenMP. Although the code targets a wide variety of x86 processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning hyperparameters, such as the *number of threads, kernel, and block sizes*, unless you're running it on a Zen3/4/5 CPU. Additionally, on AVX-512 CPUs, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on Ryzen 7900X and Ryzen 7700 is shown below. If you enjoy educational content like this and would like to see more, please share this article. Your feedback would be greatly appreciated!
 
-**P.S. Interested in working together? Please refer to the homepage for my contact information.**
+**P.S. I'm always open to considering various opportunities. For inquiries regarding job offers, please refer to the contact information available on my homepage.**
 \\
 \\
 ![](/assets/matmul_cpu/perf_ryzen_7900x.png){: width="80%" style="display:block; margin-left:auto; margin-right:auto"}
