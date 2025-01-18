@@ -1,8 +1,8 @@
 ---
 layout: post
 title:  "Beating cuBLAS in Single-Precision General Matrix Multiplication"
-excerpt: "In this blog post, we'll walk through an implementation of the SGEMM (Single-precision GEneral Matrix Multiply) operation defined as `C := alpha*A*B + beta*C`. We will review three different kernels, each optimized for specific matrix size problems. Our final implementation is optimized for Ampere architecture and outperforms cuBLAS on wide range of matrix size problems."
-description: "In this blog post, we'll walk through an implementation of the SGEMM (Single-precision GEneral Matrix Multiply) operation defined as `C := alpha*A*B + beta*C`. We will review three different kernels, each optimized for specific matrix size problems. Our final implementation is optimized for Ampere architecture and outperforms cuBLAS on wide range of matrix size problems."
+excerpt: "This blog post focuses on a GPU implementation of SGEMM (Single-precision GEneral Matrix Multiply) operation defined as C := alpha*A*B + beta*C. We'll review the algorithm’s design and discuss optimization techniques such as inlined PTX, asynchronous memory copies, double-buffering, avoiding shared memory bank conflicts, and efficient coalesced storage through shared memory."
+description: "This blog post focuses on a GPU implementation of SGEMM (Single-precision GEneral Matrix Multiply) operation defined as C := alpha*A*B + beta*C. We'll review the algorithm’s design and discuss optimization techniques such as inlined PTX, asynchronous memory copies, double-buffering, avoiding shared memory bank conflicts, and efficient coalesced storage through shared memory."
 date:   2025-01-12 11:35:01 +0200
 author: Aman Salykov
 usemathjax: true
@@ -594,7 +594,7 @@ We use global texture loads over normal vectorized global loads (`ld.global.v4.f
 ![128x128x8_texld_lock](/assets/matmul_gpu/128x128x8_texld_lock.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 ![128x128x8_texld](/assets/matmul_gpu/128x128x8_texld.png){:width="100%" style="display:block; margin-left:auto; margin-right:auto"}
 
-Lastly, we developed an [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging bigger block size $n_S=256$ and asynchronous copy instructions (`cp.async.ca.shared.global`) available on the Ampere architecture. These instructions enable asynchronous transfers from global memory directly to shared memory, reducing register usage:
+Lastly, we developed an [`128x256x8` SGEMM kernel](https://github.com/salykova/sgemm.cu/blob/main/src/kernels/128x256x8.cuh) leveraging bigger block size $n_S=256$ and asynchronous copy instructions (`cp.async.ca.shared.global`) which are supported starting with the Ampere architecture. The main advantage of these instructions is that one can overlay computation with memory transfers and avoid pipeline stalls. Additionally, they allow to copy data from global memory directly into shared memory bypassing registers:
 
 ![cp_async](/assets/matmul_gpu/cp_async.png){:width="30%" style="display:block; margin-left:auto; margin-right:auto"}
 
