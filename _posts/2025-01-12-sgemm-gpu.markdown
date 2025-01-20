@@ -137,7 +137,7 @@ Locking the clock frequencies to their base values is a reliable way to measure 
 
 ## 3. Memory Layout
 
-Without loss of generality in this implementation, we assume matrices are stored in row-major order. A matrix `A` with dimensions `M x N` is stored as contiguous array of length `M*N`. Elements `A[row][col]` are accessed via a 1D raw C pointer `ptr[row*N + col]` with `0<=col<=N-1` and `0<=row<=M-1`. Matrix multiplication is denoted as $C=AB$, where the shapes of matrices $A, B, C$ are $M \times K, K \times N, and M \times N$, respectively.
+Without loss of generality in this implementation, we assume matrices are stored in row-major order. A matrix `A` with dimensions `M x N` is stored as contiguous array of length `M*N`. Elements `A[row][col]` are accessed via a 1D raw C pointer `ptr[row*N + col]` with `0<=col<=N-1` and `0<=row<=M-1`. Matrix multiplication is denoted as $C=AB$, where the shapes of matrices $A, B, C$ are $M \times K, K \times N$ and $M \times N$, respectively.
 ![mem_layout](/assets/matmul_gpu/row_major.png){:width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
 To adapt this implementation for matrices stored in column-major order, simply swap the operands $A$ and $B$, because:
