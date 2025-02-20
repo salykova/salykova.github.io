@@ -8,16 +8,12 @@ author: Aman Salykov
 usemathjax: true
 ---
 
->This is the updated version of [Beating NumPy's Matrix Multiplication in 150 Lines of C Code](https://salykova.github.io/matmul-cpu). The revised blog post includes improved performance, detailed benchmarking information, and minor text updates.
-
-**TL;DR** The code is available at [matmul.c](https://github.com/salykova/matmul.c). In this tutorial we'll step-by-step optimize multi-threaded fp32 matrix multiplication on CPU outperforming OpenBLAS on wide range of matrix sizes. The algorithm follows the BLIS design and is implemented in simple, scalable C code parallelized with OpenMP. Although the code targets a wide variety of x86 processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning hyperparameters, such as the *number of threads, kernel, and block sizes*, unless you're running it on a Zen3/4/5 CPU. Additionally, on AVX-512 CPUs, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on Ryzen 7900X and Ryzen 7700 is shown below. If you enjoy educational content like this and would like to see more, please share this article. Your feedback would be greatly appreciated!
+**TL;DR** The code is available at [matmul.c](https://github.com/salykova/matmul.c). In this tutorial we'll step-by-step optimize multi-threaded fp32 matrix multiplication on CPU outperforming OpenBLAS on wide range of matrix sizes. The algorithm follows the BLIS design and is implemented in simple, scalable C code parallelized with OpenMP. Although the code targets a wide variety of x86 processors with FMA3 and AVX2 instructions, please don't expect peak performance without fine-tuning hyperparameters, such as the *number of threads, kernel, and block sizes*, unless you're running it on a Zen3/4/5 CPU. Additionally, on AVX-512 CPUs, the OpenBLAS implementation might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on AMD Ryzen 7 9700X is shown below.
 
 **P.S. Please feel free to get in touch if you are interested in collaborating. My contact information is available on the homepage.**
 \\
 \\
-![](/assets/matmul_cpu/perf_ryzen_7900x.png){: width="80%" style="display:block; margin-left:auto; margin-right:auto"}
-\\
-![](/assets/matmul_cpu/perf_ryzen_7700.png){: width="80%" style="display:block; margin-left:auto; margin-right:auto"}
+![](/assets/matmul_cpu/perf_ryzen_9700x.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
 
 ## Introduction
 
@@ -37,35 +33,20 @@ A closer look at the OpenBLAS [code](https://github.com/OpenMathLib/OpenBLAS/blo
 
 I highly recommend checking out these well-written and well-spoken tutorials with alternative implementations. They helped me better understand the topic and, in some sense, motivated me to write my own implementation. The reason is that all three solutions above work only for specific matrix sizes and do not really achieve OpenBLAS' performance. They are brilliant for educational purposes but not usable as drop-in replacement for existing BLAS libraries. So, I wasn't satisfied with the results and continued researching until I stumbled across two fascinating papers: "[Anatomy of High-Performance Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/GotoTOMS_final.pdf)" and "[Anatomy of High-Performance Many-Threaded Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/blis3_ipdps14.pdf)". The former presents BLAS implementation known as GotoBLAS, developed by [Kazushige Goto](https://en.wikipedia.org/wiki/Kazushige_Goto). The latter briefly reviews the matmul design used in BLIS library (an extended version of GotoBLAS) and discusses different parallelization strategies. I had a feeling that the BLIS matmul design could be implemented in pure C relatively straightforward and might potentially outperform OpenBLAS if implemented correctly. In the next chapters we will therefore focus on the matmul algorithm used in BLIS and re-implement it from scratch. Before we dive into the optimization process, let's discuss how to install OpenBLAS and properly benchmark the code on CPU.
 
-## How to install and benchmark OpenBLAS
+## How to Install and Benchmark OpenBLAS
 
-To ensure the reproducibility of your results, always specify your hardware and software environment:
+Let's start by specifying the hardware and software environment for reproducibility of the results:
 
-- CPU: AMD Ryzen 7 7700
-- CPU locked clock frequency: 4.5GHz
+- CPU: AMD Ryzen 7 9700X
 - RAM: 32GB DDR5 6000 MHz CL36
 - OpenBLAS 0.3.26
-- Compiler: GCC 11.4.0
-- OS: Ubuntu 22.04.4 LTS
+- Compiler: GCC 13.3
+- Compiler flags: `-O3 -march=native -mno-avx512f -fopenmp`
+- OS: Ubuntu 24.04.1 LTS
 
-**Important!** To obtain reproducible and accurate results, minimize the number of active tasks, particularly when benchmarking multi-threaded code. It's important to note that Windows systems generally deliver lower performance compared to Linux due to higher number of active background tasks. To guarantee consistent results, lock the CPU clock and disable auto-boost. On Ubuntu the clock speed can be locked by executing
+**Important!** To obtain reproducible and accurate results, minimize the number of active tasks, particularly when benchmarking multi-threaded code. Windows systems generally deliver lower performance compared to Linux due to higher number of active background tasks.
 
-```bash
-sudo cpupower frequency-set -u CLK
-sudo cpupower frequency-set -d CLK
-```
-
-Ensure that clock frequency is stable and doesn't vary during the benchmark. You can monitor the CPU clock speed, for example, via
-
-```bash
-watch -n 1 grep \"cpu MHz\" /proc/cpuinfo
-```
-
-To multiply two `float32` matrices - A of shape $$M \times K$$ and B of shape $$K \times N$$, for each element of the resulting matrix C of shape $$M \times N$$, we need to calculate the dot product between a row of A and a column of B. This results in $$K$$ (additions) + $$K$$ (multiplications) = $$2K$$ FLoating Point Operations (FLOP) per element of matrix C or $$2KMN$$ FLOP in total. We will measure performance in terms of FLOP per second FLOP/s=FLOPS.
-
-![](/assets/matmul_cpu/matmul_naive.png){:style="display:block; margin-left:auto; margin-right:auto"}
-
-To benchmark OpenBLAS, start by installing it according to the [installation guide](https://github.com/OpenMathLib/OpenBLAS/wiki/Installation-Guide). During the installation, ensure you set an appropriate TARGET and disable AVX512 instructions. For instance, if you're using Zen4/5 CPUs, compile OpenBLAS with:
+To benchmark OpenBLAS, start by installing it according to the [installation guide](https://github.com/OpenMathLib/OpenBLAS/wiki/Installation-Guide). During installation, ensure you set an appropriate TARGET and disable AVX512 instructions. For instance, if you're using Zen4/5 CPUs, compile OpenBLAS with:
 ```bash
 make TARGET=ZEN
 ```
@@ -78,19 +59,22 @@ Check [benchmark.c](https://github.com/salykova/matmul.c/blob/main/benchmark.c) 
 
 ## Theoretical Limit
 
+To multiply two `float32` matrices - A of shape $$M \times K$$ and B of shape $$K \times N$$, for each element of the resulting matrix C of shape $$M \times N$$, we need to calculate the dot product between a row of A and a column of B. This results in $$K$$ (additions) + $$K$$ (multiplications) = $$2K$$ FLoating Point Operations (FLOP) per element of matrix C or $$2KMN$$ FLOP in total. We will measure performance in terms of FLOP per second FLOP/s=FLOPS.
+
+![](/assets/matmul_cpu/matmul_naive.png){:style="display:block; margin-left:auto; margin-right:auto"}
+
 Recall the computer's memory hierarchy (for now, ignore the layers between registers and main memory(=RAM); we will discuss them later).
 
 ![](/assets/matmul_cpu/cpu_mem_no_cache.png){:width="70%" style="display:block; margin-left:auto; margin-right:auto"}
 
 To perform arithmetic operations on data stored in RAM (off-chip memory, slow and large), the data must first be transferred to CPU and eventually stored in CPU registers (on-chip memory, fast and small). Modern x86 CPUs support SIMD (Single Instruction Multiple Data) extensions, which allow multiple pieces of data to be processed in parallel. There are various SIMD extensions, but the ones relevant to our discussion are [Advanced Vector Extensions](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) (AVX) and [Fused Multiply-Add](https://en.wikipedia.org/wiki/FMA_instruction_set) (FMA). Both AVX and FMA operate on data stored in special 256-bit YMM registers. Each YMM register can hold up to 256/32 = 8 packed single-precision (32-bit) floats. The FMA extension allows a multiply-add operation to be performed in one step on data stored in YMM registers. The corresponding assembly instruction is called `VFMADD213PS` (PS stands for PackedSingle) and takes three registers (`YMM1`, `YMM2`, `YMM3`) as input to calculate `YMM1 * YMM2 + YMM3` and store the result in `YMM3`, hence the "213" (there are also `vfmadd132ps`, `vfmadd231ps` variants).
 
-
 ![](/assets/matmul_cpu/fmadd.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-According to the [intel intrinsics guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html) or [https://uops.info/table.html](https://uops.info/table.html), the throughput (TP) of fused-multiply-add is 0.5 cycles/instruction or 2 instructions/cycle:
+According to the [intel intrinsics guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html) or [https://uops.info/table.html](https://uops.info/table.html), for my CPU the throughput (TP) of fused-multiply-add is 0.5 cycles/instruction or 2 instructions/cycle:
 ![](/assets/matmul_cpu/fmadd_uops.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
-Theoretically, the CPU can execute 32 FLOP per cycle = 8 (floats in YMM register) * 2 (add + mul) * 2 (1/TP). On my machine, the CPU boosts up to stable 5.1 GHz in single-threaded tasks and up to stable 4.5 GHz in multi-threaded tasks. Therefore, a rough estimation of the maximum achievable FLOPS can be calculated as 5.1GHz * 32 FLOP/cycle = **163 GFLOPS** for single-threaded matmul and 4.5GHz * 32 FLOP/cycle * 8 cores = **1152 GFLOPS** for multi-threaded matmul. Starting from $$M=N=K=2000$$, OpenBLAS reaches on average 92% of the theoretical maximum multi-threaded performance. Is it possible to rival OpenBLAS using plain C code, without relying on thousands of lines of low-level assembly?
+Theoretically, the CPU can execute 32 FLOP per cycle = 8 (floats in YMM register) * 2 (add + mul) * 2 (1/TP). Therefore, a rough estimation of the maximum achievable FLOPS can be calculated as `CLOCK_SPEED * 32` FLOPS.
 
 ## Naive Implementation
 
@@ -225,28 +209,38 @@ void matmul_kernel(float* A, float* B, float* C, const int M, const int N, const
 ```
 We can check the assembly code produced by the compiler via
 ```bash
-gcc -O2 -mno-avx512f -march=native matmul_kernel.c -S > matmul_kernel.txt
+gcc -O3 -mno-avx512f -march=native matmul_kernel.c -S
 ```
 to ensure that the SIMD instructions and the YMM registers are utilized:
 ```
-vbroadcastss	(%rsi,%rbp,4), %ymm14
-vbroadcastss	(%rbx,%rbp,4), %ymm15
-vfmadd231ps	%ymm14, %ymm12, %ymm3   # ymm3 = (ymm12 * ymm14) + ymm3
-vfmadd231ps	%ymm14, %ymm13, %ymm1   # ymm1 = (ymm13 * ymm14) + ymm1
-vbroadcastss	(%r13,%rbp,4), %ymm14
-vfmadd231ps	%ymm12, %ymm15, %ymm11  # ymm11 = (ymm15 * ymm12) + ymm11
-vfmadd231ps	%ymm15, %ymm13, %ymm10  # ymm10 = (ymm13 * ymm15) + ymm10
-vfmadd231ps	%ymm14, %ymm12, %ymm2   # ymm2 = (ymm12 * ymm14) + ymm2
-vfmadd231ps	%ymm14, %ymm13, %ymm0   # ymm0 = (ymm13 * ymm14) + ymm0
-vbroadcastss	(%r12,%rbp,4), %ymm14
-vfmadd231ps	%ymm14, %ymm12, %ymm5   # ymm5 = (ymm12 * ymm14) + ymm5
-vfmadd231ps	%ymm14, %ymm13, %ymm4   # ymm4 = (ymm13 * ymm14) + ymm4
-vbroadcastss	(%r15,%rbp,4), %ymm14
-vfmadd231ps	%ymm14, %ymm12, %ymm7   # ymm7 = (ymm12 * ymm14) + ymm7
-vfmadd231ps	%ymm14, %ymm13, %ymm6   # ymm6 = (ymm13 * ymm14) + ymm6
-vbroadcastss	(%r14,%rbp,4), %ymm14
-vfmadd231ps	%ymm14, %ymm12, %ymm9   # ymm9 = (ymm12 * ymm14) + ymm9
-vfmadd231ps	%ymm14, %ymm13, %ymm8   # ymm8 = (ymm13 * ymm14) + ymm8
+vfmadd231ps	%ymm14, %ymm1, %ymm13
+vfmadd231ps	%ymm14, %ymm0, %ymm12
+vmovaps	%ymm13, 32(%rsp)
+vmovaps	%ymm12, 64(%rsp)
+vbroadcastss	(%rax,%r9), %ymm14
+vfmadd231ps	%ymm14, %ymm1, %ymm10
+vfmadd231ps	%ymm14, %ymm0, %ymm11
+vmovaps	%ymm10, 96(%rsp)
+vmovaps	%ymm11, 128(%rsp)
+vbroadcastss	(%rax,%r9,2), %ymm14
+addq	$4, %rax
+vfmadd231ps	%ymm14, %ymm1, %ymm2
+vfmadd231ps	%ymm14, %ymm0, %ymm3
+vmovaps	%ymm2, 160(%rsp)
+vmovaps	%ymm3, 192(%rsp)
+vbroadcastss	(%r9,%rcx), %ymm14
+vfmadd231ps	%ymm14, %ymm1, %ymm4
+vfmadd231ps	%ymm14, %ymm0, %ymm5
+vmovaps	%ymm4, 224(%rsp)
+vmovaps	%ymm5, 256(%rsp)
+vbroadcastss	(%rcx,%r9,2), %ymm14
+vfmadd231ps	%ymm14, %ymm1, %ymm6
+vfmadd231ps	%ymm14, %ymm0, %ymm7
+vmovaps	%ymm6, 288(%rsp)
+vmovaps	%ymm7, 320(%rsp)
+vbroadcastss	(%r9,%rsi), %ymm14
+vfmadd231ps	%ymm14, %ymm1, %ymm8
+vfmadd231ps	%ymm14, %ymm0, %ymm9
 ```
 
 ## Masking And Packing
@@ -346,7 +340,7 @@ Unlike DRAM, the cache is on-chip memory used to store frequently and recently a
 *Intel Core i9-13900K labelled die shot. Source: [How are Microchips Made?](https://www.youtube.com/watch?v=dX9CGRZwD-w)*
 {:style="display:block; margin-left:auto; margin-right:auto; text-align: center"}
 
-To enhance access speed, CPUs transfer data between main memory and cache in fixed-size chunks called **cache lines** or **cache blocks**. When a cache line is transferred, a corresponding cache entry is created to store it. On Ryzen 7700, the cache line size is [64 bytes](https://en.wikichip.org/wiki/amd/microarchitectures/zen_4#Memory_Hierarchy). The cache takes advantage of how we typically access data. When a single floating-point number from a continuous array in memory is requested, the cache cleverly grabs the next 15 floats along the way and stores them as well. This is why reading data sequentially from a contiguous array is much faster than jumping around to random memory locations. When the processor needs to read or write to a memory location, it first checks the cache for a corresponding entry. If the processor finds the memory location in the cache, a **cache hit** occurs. However, if the memory location is not found in the cache, a **cache miss** occurs. In the case of a cache miss, the cache allocates a new entry and copies the data from main memory. If the cache is full, a [cache replacement policy](https://en.wikipedia.org/wiki/Cache_replacement_policies) kicks in to determine which data gets evicted to make room for new information. Several cache replacement policies exist, with LRU (Least Recently Used), LFU (Least Frequently Used), and LFRU (Least Frequently Recently Used) being the most widely used.
+To enhance access speed, CPUs transfer data between main memory and cache in fixed-size chunks called **cache lines** or **cache blocks**. When a cache line is transferred, a corresponding cache entry is created to store it. On Ryzen 9700X, the cache line size is [64 bytes](https://en.wikichip.org/wiki/amd/microarchitectures/zen_4#Memory_Hierarchy). The cache takes advantage of how we typically access data. When a single floating-point number from a continuous array in memory is requested, the cache cleverly grabs the next 15 floats along the way and stores them as well. This is why reading data sequentially from a contiguous array is much faster than jumping around to random memory locations. When the processor needs to read or write to a memory location, it first checks the cache for a corresponding entry. If the processor finds the memory location in the cache, a **cache hit** occurs. However, if the memory location is not found in the cache, a **cache miss** occurs. In the case of a cache miss, the cache allocates a new entry and copies the data from main memory. If the cache is full, a [cache replacement policy](https://en.wikipedia.org/wiki/Cache_replacement_policies) kicks in to determine which data gets evicted to make room for new information. Several cache replacement policies exist, with LRU (Least Recently Used), LFU (Least Frequently Used), and LFRU (Least Frequently Recently Used) being the most widely used.
 
 Similar to registers, once data is loaded into the cache, we want to reuse the data as much as possible to reduce main memory accesses. Given the cache's limited capacity, storing entire input matrices $C, B, A$  in the cache isn't feasible. Instead, we divide them into smaller blocks, load these blocks into the cache, and reuse them for rank-1 updates. This technique is often referred to as **tiling** or **cache blocking**, allowing us to handle matrices of arbitrary size effectively.
 
@@ -431,13 +425,13 @@ The corresponding implementation can be found at [matmul_optimized_kernel.c](htt
 
 ## Multithreading
 
-There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, the second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 7700, cache block sizes of $n_c=1535$, $m_c=1024$ attain the best performance in the single-threaded scenario. Given the number of available cores on Ryzen 7700, we need input matrices with dimensions of at least $\max(m_c, n_c) \times \text{number of cores} = 1535 \times 8 = 12280$ to be able to distribute the work over all cores.
+There are indeed many loops that can be potentially parallelized. To achieve high-performance, we want to parallelize both packing and arithmetic operations. Let's start with the arithmetic operations. The 5th, 4th, 3rd loops around the micro-kernel iterate over matrix dimensions in chunks of cache block sizes $n_c$, $k_c$, $m_c$. To efficiently parallelize the loops and keep all threads busy, we want number of iterations (=matrix dimension / cache block size) to be at least = number of threads (generally, the more the better). In other words, the input matrix dimension should be at least = number of threads  * cache block size. As we discussed earlier, we also want cache blocks to fully occupy the corresponding cache levels. On modern CPUs, the second requirement results in cache block sizes of thousand(s) of elements. For example, on my Ryzen 9700X, cache block sizes of $n_c=1535$, $m_c=1024$ attain the best performance in the single-threaded scenario. Given the number of available cores on Ryzen 9700X, we need input matrices with dimensions of at least $\max(m_c, n_c) \times \text{number of cores} = 1535 \times 8 = 12280$ to be able to distribute the work over all cores.
 
 ![](/assets/matmul_cpu/blis_design.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
  In contrast, the last two loops iterate over cache blocks, dividing them into $m_R, n_R$ blocks. Since $n_R, m_R$ are typically very small (<20), these loops are ideal candidates for parallelization. Moreover, we can choose $m_c, n_c$ to be multiples of number of cores so that the work is evenly distributed across all cores.
 
- On my machine, parallelizing the second and first loops jointly using `collapse(2)` results in the best performance:
+ On my machine, parallelizing the second and first inner loops jointly with `collapse(2)` results in the best performance:
 
 ```c
 #pragma omp parallel for collapse(2) num_threads(NTHREADS)
@@ -446,7 +440,7 @@ There are indeed many loops that can be potentially parallelized. To achieve hig
 
 More on OpenMP [here](https://ppc.cs.aalto.fi/ch2/openmp/), [here](https://ppc.cs.aalto.fi/ch3/) and [here](https://curc.readthedocs.io/en/latest/programming/OpenMP-C.html).
 
->In the current implementation, only 1 out of 5 loops is parallelized (the 2nd loop around the micro-kernel). For many-core processors (more than 16 cores), consider utilizing nested parallelism and parallelizing 2-3 loops to increase the performance (e.g., the 5th, 3rd, and 2nd loops around the micro-kernel).
+>For many-core processors (> 16 cores), consider utilizing nested parallelism and parallelizing 2-3 loops to increase the performance.
 
 Together with arithmetic operations, we will also parallelize the packing of both $\tilde{A}$ and $\tilde{B}$:
 
@@ -464,11 +458,11 @@ void pack_blockB(float* B, float* blockB_packed, const int nc, const int kc, con
 
 Similar to the second loop (and the first loop) around the micro-kernel, the packing loops can be efficiently parallelized due to the high number of iterations and the flexibility of choosing  $m_c, n_c$. For the multi-threaded implementation the values
 
-$$m_c = m_R \times \text{number of threads} \times 2$$
+$$m_c = m_R \times \text{number of threads} \times 5$$
 
-$$n_c = n_R \times \text{number of threads} \times 71$$
+$$n_c = n_R \times \text{number of threads} \times 50$$
 
 provide the best performance on my machine, leading to the final optimized multi-threaded implementation.
 
 ## Conclusion
-I had a great time implementing and optimizing matrix multiplication on the CPU - it was a challenging but really fun project. I believe the best way to truly understand hardware and code optimization techniques is by getting hands-on and building something yourself. In our implementation, we used techniques like kernel optimization, cache/register blocking, and multi-threading. That said, there’s still room to make it even better, like manually managing threads with `pthread` and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
+I had a great time implementing and optimizing matrix multiplication on the CPU - it was a challenging but really fun project. I believe the best way to truly understand hardware and code optimization techniques is by getting hands-on and building something yourself. In our implementation, we used techniques like kernel optimization, cache/register blocking, and multi-threading. However, there’s still room to make it even better, like manually managing threads with `pthread` and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
