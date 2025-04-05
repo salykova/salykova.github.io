@@ -60,9 +60,9 @@ Otherwise, OpenBLAS defaults to AVX512 instructions. After installation, you can
 cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, m, n, k, 1, A, m, B, k, 0, C, m);
 ```
 
-The benchmark evaluates the custom implementation and the OpenBLAS API on square matrices, ranging from `m=n=k=200` to `m=n=k=10000` in steps of `200`. To obtain consistent and accurate results, matrix multiplication is repeated `n_iter` times, and performance is measured as the median runtime.
+The benchmark evaluates the custom implementation and the OpenBLAS API on square matrices, ranging from `m=n=k=200` to `m=n=k=10000` in steps of `200`. To obtain consistent and accurate results, matrix multiplication is repeated `n_iter` times, and performance is measured as median execution time.
 
-To multiply two `float32` matrices - $A$ of size $M \times K$ and $B$ of size $K \times N$, for each element of the resulting matrix $C$ of size $M \times N$, we need to compute the dot product between a row of $A$ and a column of $B$. This requires $K$ (additions) + $K$ (multiplications) = $2K$ Floating Point Operations (FLOP) per element of $C$ or $2MNK$ FLOP in total. A metric often used to evaluate matmul performance is called FLOP per second or FLOP/s or FLOPS, and it can be derived from the algorithm's runtime as `FLOPS=FLOP/runtime=(2*m*n*k)/runtime`.
+To multiply two `float32` matrices - $A$ of size $M \times K$ and $B$ of size $K \times N$, for each element of the resulting matrix $C$ of size $M \times N$, we need to compute the dot product between a row of $A$ and a column of $B$. This requires $K$ (additions) + $K$ (multiplications) = $2K$ Floating Point Operations (FLOP) per element of $C$ or $2MNK$ FLOP in total. A metric often used to evaluate matmul performance is called FLOP per second or FLOP/s or FLOPS, and it can be derived from the execution time as `FLOPS=FLOP/exec_time=(2*m*n*k)/exec_time`.
 
 ![](/assets/matmul_cpu/matmul_naive.png){:style="display:block; margin-left:auto; margin-right:auto"}
 
