@@ -146,7 +146,7 @@ The last thing we need to discuss before implementing the kernel in C is how to 
 
 In theory we want $m_R = n_R$ to minimize the number of fetched elements. However, in practice, a non-square kernel with $m_R = 16, n_R = 6$ showed the best performance on my CPU. Therefore, we will implement this kernel in the next section. Feel free to experiment with other kernel sizes, such as $8 \times 8, 8 \times 12$, $8 \times 13$, $8 \times 14$, $32 \times 2$ and compare their performance on your CPU.
 
-Let's implement the algorithm discussed above using the $16 \times 6$ kernel. The code of this implementation can be found at [matmul_kernel.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_kernel.c). To use SIMD instructions in C we first need to include the `immintin.h` library:
+Let's implement the algorithm discussed above using the $16 \times 6$ kernel. The code of this implementation can be found at [matmul_kernel.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_kernel.h). To use SIMD instructions in C we first need to include the `immintin.h` library:
 
 ```c
 #include <immintrin.h>
@@ -251,7 +251,7 @@ vfmadd231ps	%ymm14, %ymm0, %ymm3
 ...
 ```
 
-## 6. Packing and Padding
+## 6. Padding
 
 You may have noticed that the current implementation only works for matrix sizes where $M$ and $N$ are multiples of $m_R$ and $n_R$, respectively. Specifically, the kernel assumes that matrix $\bar{C}$ has dimensions $m_R \times n_R$, matrix $\bar{A}$ is $m_R \times K$ and matrix $\bar{B}$ is $K \times n_R$. Our goal is to generalize the kernel so that it can handle matrices $\bar{C}, \bar{A}, \bar{B}$ with dimensions $m \times n, m \times K, K \times n$, even when $m \neq m_R$ and $n \neq n_R$, as shown below:
 
@@ -340,7 +340,7 @@ void matmul_pack(float* A, float* B, float* C, const int M, const int N, const i
 }
 ```
 
-For further implementations details, please check [matmul_pack.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_pack.c)
+For further implementations details, please check [matmul_pad.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_pad.h)
 
 ## 7. Cache Blocking
 
@@ -390,7 +390,8 @@ Different CPU models have different cache sizes. To achieve peak performance, it
 
 While these values provide a good starting point, using larger values often leads to better performance in practice. Unfortunately (or fortunately), we cannot manually place data into the cache or control which cache levels store the data; the CPU manages this automatically using cache replacement policies. Therefore, cache blocking and cache reuse must be implemented at the algorithm level through, for example, well-designed loops and strategic data access patterns.
 
-The implementation [matmul_cache.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_cache.c) straightforwardly follows the algorithm depicted in the diagram:
+The implementation [matmul_cache.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_cache.h) straightforwardly follows the algorithm depicted in the diagram:
+
 ```c
 void matmul_cache(float* A, float* B, float* C, const int M, const int N, const int K) {
   for (int j = 0; j < N; j += NC) {
@@ -414,7 +415,7 @@ void matmul_cache(float* A, float* B, float* C, const int M, const int N, const 
 }
 ```
 
-## Kernel Micro-Optimizations
+## 8. Kernel Micro-Optimizations
 
 Instead of using arrays of `__m256` to define the accumulator $\bar{C}$ and the masks
 ```c
@@ -447,7 +448,7 @@ packed_mask0 = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask[16 - mr]));
 packed_mask1 = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask[16 - mr + 8]));
 ```
 
-The corresponding implementation can be found at [matmul_optimized_kernel.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_optimized_kernel.c)
+The corresponding implementation can be found at [matmul_micro.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_micro.h)
 
 ## Multithreading
 
@@ -488,7 +489,4 @@ $$m_c = m_R \times \text{number of threads} \times 5$$
 
 $$n_c = n_R \times \text{number of threads} \times 50$$
 
-provide the best performance on my machine, leading to the final optimized multi-threaded implementation.
-
-## Conclusion
-I had a great time implementing and optimizing matrix multiplication on the CPU - it was a challenging but really fun project. I believe the best way to truly understand hardware and code optimization techniques is by getting hands-on and building something yourself. In our implementation, we used techniques like kernel optimization, cache/register blocking, and multi-threading. However, there’s still room to make it even better, like manually managing threads with `pthread` and [data prefetching](https://clang.llvm.org/docs/LanguageExtensions.html#builtin-prefetch).
+provide the best performance on my machine, leading to the final optimized multi-threaded implementation [matmul_parallel.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_parallel.h)
