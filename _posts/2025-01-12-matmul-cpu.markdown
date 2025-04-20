@@ -8,12 +8,13 @@ author: Aman Salykov
 usemathjax: true
 ---
 
-**TL;DR** The code is available at [matmul.c](https://github.com/salykova/matmul.c). This blog post demonstrates how to optimize multi-threaded FP32 matrix multiplication for modern processors using FMA3 and AVX2 vector instructions. The optimized custom implementation resembles the BLIS design and outperforms existing BLAS libraries (including OpenBLAS and MKL) on a wide range of matrix sizes. This implementation shows strong performance across various x86-64 architectures, both in single-threaded and multithreaded settings. However, achieving optimal speed requires careful adjustment of hyperparameters e.g. the *number of threads, kernel size, and tile sizes*. Additionally, on AVX-512 CPUs, the BLAS libraries might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on AMD Ryzen 7 9700X is shown below.
+**TL;DR** The code is available at [sgemm.c](https://github.com/salykova/sgemm.c). This blog post demonstrates how to optimize multi-threaded FP32 matrix multiplication for modern processors using FMA3 and AVX2 vector instructions. The optimized custom implementation resembles the BLIS design and outperforms existing BLAS libraries (including OpenBLAS and MKL) on a wide range of matrix sizes. This implementation shows strong performance across various x86-64 architectures, both in single-threaded and multithreaded settings. However, achieving optimal speed requires careful adjustment of hyperparameters e.g. the *number of threads, kernel size, and tile sizes*. Additionally, on AVX-512 CPUs, the BLAS libraries might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on AMD Ryzen 7 9700X is shown below.
 
 **P.S. Please feel free to get in touch if you are interested in collaborating. My contact information is available on the homepage.**
-\\
-\\
-![](/assets/matmul_cpu/perf_ryzen_9700x.png){: width="90%" style="display:block; margin-left:auto; margin-right:auto"}
+
+![](/assets/matmul_cpu/intel_core_perf.png){: width="80%" style="display:block; margin-left:auto; margin-right:auto"}
+
+![](/assets/matmul_cpu/amd_ryzen_perf.png){: width="80%" style="display:block; margin-left:auto; margin-right:auto"}
 
 ## 1. Introduction
 
@@ -146,7 +147,7 @@ The last thing we need to discuss before implementing the kernel in C is how to 
 
 In theory we want $m_R = n_R$ to minimize the number of fetched elements. However, in practice, a non-square kernel with $m_R = 16, n_R = 6$ showed the best performance on my CPU. Therefore, we will implement this kernel in the next section. Feel free to experiment with other kernel sizes, such as $8 \times 8, 8 \times 12$, $8 \times 13$, $8 \times 14$, $32 \times 2$ and compare their performance on your CPU.
 
-Let's implement the algorithm discussed above using the $16 \times 6$ kernel. The code of this implementation can be found at [matmul_kernel.c](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_kernel.h). To use SIMD instructions in C we first need to include the `immintin.h` library:
+Let's implement the algorithm discussed above using the $16 \times 6$ kernel. The code of this implementation can be found at [matmul_kernel.c](https://github.com/salykova/sgemm.c/blob/main/tutorial/matmul_kernel.h). To use SIMD instructions in C we first need to include the `immintin.h` library:
 
 ```c
 #include <immintrin.h>
@@ -340,7 +341,7 @@ void matmul_pack(float* A, float* B, float* C, const int M, const int N, const i
 }
 ```
 
-For further implementations details, please check [matmul_pad.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_pad.h)
+For further implementations details, please check [matmul_pad.h](https://github.com/salykova/sgemm.c/blob/main/tutorial/matmul_pad.h)
 
 ## 7. Cache Blocking
 
@@ -390,7 +391,7 @@ Different CPU models have different cache sizes. To achieve peak performance, it
 
 While these values provide a good starting point, using larger values often leads to better performance in practice. Unfortunately (or fortunately), we cannot manually place data into the cache or control which cache levels store the data; the CPU manages this automatically using cache replacement policies. Therefore, cache blocking and cache reuse must be implemented at the algorithm level through, for example, well-designed loops and strategic data access patterns.
 
-The implementation [matmul_cache.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_cache.h) straightforwardly follows the algorithm depicted in the diagram:
+The implementation [matmul_cache.h](https://github.com/salykova/sgemm.c/blob/main/tutorial/matmul_cache.h) straightforwardly follows the algorithm depicted in the diagram:
 
 ```c
 void matmul_cache(float* A, float* B, float* C, const int M, const int N, const int K) {
@@ -448,7 +449,7 @@ packed_mask0 = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask[16 - mr]));
 packed_mask1 = _mm256_cvtepi8_epi32(_mm_loadu_si64(&mask[16 - mr + 8]));
 ```
 
-The corresponding implementation can be found at [matmul_micro.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_micro.h)
+The corresponding implementation can be found at [matmul_micro.h](https://github.com/salykova/sgemm.c/blob/main/tutorial/matmul_micro.h)
 
 ## 9. Multithreading
 
@@ -489,4 +490,4 @@ $$m_c = m_R \times \text{number of threads} \times 5$$
 
 $$n_c = n_R \times \text{number of threads} \times 50$$
 
-provide the best performance on my machine, leading to the final optimized multi-threaded implementation [matmul_parallel.h](https://github.com/salykova/matmul.c/blob/main/tutorial/matmul_parallel.h)
+provide the best performance on my machine, leading to the final optimized multi-threaded implementation [matmul_parallel.h](https://github.com/salykova/sgemm.c/blob/main/tutorial/matmul_parallel.h)
