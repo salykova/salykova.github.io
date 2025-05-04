@@ -1,14 +1,14 @@
 ---
 layout: post
-title:  "Advanced GEMM Optimization on Modern x86-64 Multi-Core Processors"
-excerpt: "This blog post explains how to optimize multi-threaded FP32 matrix multiplication for modern processors using FMA3 and AVX2 vector instructions. The optimized custom implementation resembles the BLIS design and outperforms existing BLAS libraries (including OpenBLAS and MKL) on a wide range of matrix sizes. Tags: High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
-description: "This blog post explains how to optimize multi-threaded FP32 matrix multiplication for modern processors using FMA3 and AVX2 vector instructions. The optimized custom implementation resembles the BLIS design and outperforms existing BLAS libraries (including OpenBLAS and MKL) on a wide range of matrix sizes. Tags: High-performance GEMM on CPU. Fast SGEMM in C. High-performance matrix multiplication on CPU. SGEMM Optimization on CPU."
+title:  "Advanced Matrix Multiplication Optimization on Modern Multi-Core Processors"
+excerpt: "A detailed blog post on optimizing multi-threaded matrix multiplication for x86 processors to achieve OpenBLAS/MKL-like performance. Tags: High-performance GEMM on CPU, Fast GEMM on CPU, High-performance matrix multiplication on CPU, Fast Matrix Multiplication on CPU, Matrix multiplication in C, GEMM in C, Matrix multiplication acceleration."
+description: "A detailed blog post on optimizing multi-threaded matrix multiplication for x86 processors to achieve OpenBLAS/MKL-like performance. Tags: High-performance GEMM on CPU, Fast GEMM on CPU, High-performance matrix multiplication on CPU, Fast Matrix Multiplication on CPU, Matrix multiplication in C, GEMM in C, Matrix multiplication acceleration."
 date:   2025-01-12 11:00:01 +0200
 author: Aman Salykov
 usemathjax: true
 ---
 
-**TL;DR** The code is available at [sgemm.c](https://github.com/salykova/sgemm.c). This blog post demonstrates how to optimize multi-threaded FP32 matrix multiplication for modern processors using FMA3 and AVX2 vector instructions. The optimized custom implementation resembles the BLIS design and outperforms existing BLAS libraries (including OpenBLAS and MKL) on a wide range of matrix sizes. This implementation shows strong performance across various x86-64 architectures, both in single-threaded and multithreaded settings. However, achieving optimal speed requires careful adjustment of hyperparameters e.g. the *number of threads, kernel size, and tile sizes*. Additionally, on AVX-512 CPUs, the BLAS libraries might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. The achieved performance on AMD Ryzen 7 9700X is shown below.
+**TL;DR** The code is available at [sgemm.c](https://github.com/salykova/sgemm.c). This blog post walks through optimizing multi-threaded FP32 matrix multiplication on modern processors using FMA3 and AVX2 vector instructions. The implementation delivers strong performance on a variety of x86-64 CPUs, both in single-threaded and multithreaded scenarios. However, to reach peak performance, you'll need to fine-tune hyperparameters - such as the *number of threads, kernel size, and tile sizes*. Additionally, on AVX-512 CPUs, the BLAS libraries might be notably faster due to AVX-512 instructions, which were intentionally omitted here to support a broader range of processors. Performance results for Intel Core Ultra 265 and AMD Ryzen 7 9700X are shown below.
 
 **P.S. Please feel free to get in touch if you are interested in collaborating. My contact information is available on the homepage.**
 
