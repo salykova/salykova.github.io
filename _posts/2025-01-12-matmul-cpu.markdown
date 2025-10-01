@@ -4,7 +4,7 @@ title:  "Advanced Matrix Multiplication Optimization on Modern Multi-Core Proces
 excerpt: "A detailed blog post on optimizing multi-threaded matrix multiplication for x86 processors to achieve OpenBLAS/MKL-like performance. Tags: High-performance GEMM on CPU, Fast GEMM on CPU, High-performance matrix multiplication on CPU, Fast Matrix Multiplication on CPU, Matrix multiplication in C, GEMM in C, Matrix multiplication acceleration."
 description: "A detailed blog post on optimizing multi-threaded matrix multiplication for x86 processors to achieve OpenBLAS/MKL-like performance. Tags: High-performance GEMM on CPU, Fast GEMM on CPU, High-performance matrix multiplication on CPU, Fast Matrix Multiplication on CPU, Matrix multiplication in C, GEMM in C, Matrix multiplication acceleration."
 date:   2025-01-12 11:00:01 +0200
-author: Aman Salykov
+author: Amanzhol Salykov
 usemathjax: true
 ---
 

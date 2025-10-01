@@ -4,7 +4,7 @@ title:  "Advanced Matrix Multiplication Optimization on NVIDIA GPUs"
 excerpt: "This blog post focuses on a GPU implementation of SGEMM (Single-precision GEneral Matrix Multiply) operation defined as C := alpha*A*B + beta*C. We'll review the algorithm’s design and discuss optimization techniques such as inlined PTX, asynchronous memory copies, double-buffering, avoiding shared memory bank conflicts, and efficient coalesced storage through shared memory."
 description: "This blog post focuses on a GPU implementation of SGEMM (Single-precision GEneral Matrix Multiply) operation defined as C := alpha*A*B + beta*C. We'll review the algorithm’s design and discuss optimization techniques such as inlined PTX, asynchronous memory copies, double-buffering, avoiding shared memory bank conflicts, and efficient coalesced storage through shared memory."
 date:   2025-01-12 11:35:01 +0200
-author: Aman Salykov
+author: Amanzhol Salykov
 usemathjax: true
 ---
 
