@@ -30,7 +30,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --->
 
-In this blog post, we walk through how to use Matrix Cores in HIP kernels, with a focus on low-precision data types such as FP16, FP8, and FP4, as well as the new family of Matrix Core instructions with exponent block scaling introduced in the AMD CDNA™4 architecture. Through code examples and illustrations, we provide the necessary knowledge to start programming Matrix Cores, covering modern low-precision floating-point types, the Matrix Core compiler intrinsics, and the data layouts required by the Matrix Core instructions.
+**TL;DR** In this blog post, we walk through how to use Matrix Cores in HIP kernels, with a focus on low-precision data types such as FP16, FP8, and FP4, as well as the new family of Matrix Core instructions with exponent block scaling introduced in the AMD CDNA™4 architecture. Through code examples and illustrations, we provide the necessary knowledge to start programming Matrix Cores, covering modern low-precision floating-point types, the Matrix Core compiler intrinsics, and the data layouts required by the Matrix Core instructions. The blog post is also available on [ROCm Blogs](https://rocm.blogs.amd.com/software-tools-optimization/matrix-cores-cdna/README.html).
 
 ## 1. Matrix Cores
 
