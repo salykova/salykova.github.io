@@ -27,6 +27,12 @@ url: "https://salykova.github.io" # the base hostname & protocol for your site, 
 twitter_username: salykova_
 linkedin_username: salykovaa
 github_username:  salykova
+google_analytics: G-M2FTQK7945
+analytics:
+  provider: "google-gtag"
+  google:
+    tracking_id: "G-M2FTQK7945"
+    anonymize_ip: false # default
 
 # Build settings
 theme: minima
